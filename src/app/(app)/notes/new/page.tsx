@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
-import { createNote } from "@/server/actions/productivity";
+import { requireUser } from "@/server/auth/session";
+import { db } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
+/** Entry point for the command palette's "New note": creates an empty note and opens it. */
 export default async function NewNotePage() {
-  const { id } = await createNote();
-  redirect(`/notes/${id}`);
+  const user = await requireUser();
+  const note = await db.note.create({ data: { userId: user.id, title: "Untitled", content: "" } });
+  redirect(`/notes/${note.id}`);
 }

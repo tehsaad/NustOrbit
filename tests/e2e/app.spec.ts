@@ -128,6 +128,11 @@ test("timetable, assignments, tasks and notes", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Heaps" })).toBeVisible();
   await page.goto("/notes?q=heaps");
   await expect(page.getByText("Lecture 5")).toBeVisible();
+
+  // Command palette entry point.
+  await page.goto("/notes/new");
+  await expect(page).toHaveURL(/\/notes\/(?!new)[^/]+$/);
+  await expect(page.getByLabel("Title")).toHaveValue("Untitled");
 });
 
 test("calendar event, reminder and conflict-free views render", async ({ page }) => {
@@ -143,6 +148,18 @@ test("calendar event, reminder and conflict-free views render", async ({ page })
     await page.goto(`/calendar?view=${v}`);
     await expect(page.getByRole("tab", { name: v })).toHaveAttribute("aria-selected", "true");
   }
+});
+
+test("command palette navigates with the keyboard", async ({ page }) => {
+  await signIn(page);
+  const palette = page.getByRole("dialog");
+  await expect(async () => {
+    await page.keyboard.press("Control+k");
+    await expect(palette.getByPlaceholder("Go to, create, search…")).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 20_000 });
+  await page.keyboard.type("Attendance");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/attendance$/);
 });
 
 test("another user's data is not reachable", async ({ page }) => {

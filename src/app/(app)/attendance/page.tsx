@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plus, Trash2, UserCheck } from "lucide-react";
+import { Trash2, UserCheck } from "lucide-react";
 import { requireUser } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { getAttendancePolicy, getPrefs } from "@/server/prefs";
@@ -9,10 +9,11 @@ import { attendanceOutlook, summarizeAttendance } from "@/domain/attendance";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { SourceBadge } from "@/components/source-badge";
-import { ConfirmAction, FormDialog, SelectField, TextField } from "@/components/forms";
+import { ConfirmAction } from "@/components/forms";
+import { AttendanceFormDialog } from "@/components/modules/attendance-form";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { deleteAttendance, saveAttendance } from "@/server/actions/schedule";
+import { deleteAttendance } from "@/server/actions/schedule";
 import { courseLabel, fmtDate, pct, toDateInput } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -43,38 +44,7 @@ export default async function AttendancePage() {
             </>
           )
         }
-        actions={
-          <FormDialog
-            trigger={
-              <Button size="sm" disabled={options.length === 0}>
-                <Plus /> Record attendance
-              </Button>
-            }
-            title="Record attendance"
-            description="Manual records are labelled as maintained by you."
-            action={saveAttendance}
-          >
-            {(s) => (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <SelectField label="Course" name="courseId" state={s} options={options} required className="sm:col-span-2" />
-                <TextField label="Date" name="date" type="date" required defaultValue={toDateInput(new Date(), tz)} state={s} />
-                <SelectField
-                  label="Status"
-                  name="status"
-                  state={s}
-                  options={[
-                    { value: "PRESENT", label: "Present" },
-                    { value: "ABSENT", label: "Absent" },
-                    { value: "LATE", label: "Late" },
-                    { value: "LEAVE", label: "Leave" },
-                  ]}
-                />
-                <TextField label="Sessions (contact hours)" name="sessions" type="number" min={1} max={6} defaultValue={1} state={s} />
-                <TextField label="Note" name="note" state={s} />
-              </div>
-            )}
-          </FormDialog>
-        }
+        actions={<AttendanceFormDialog courses={options} today={toDateInput(new Date(), tz)} />}
       />
       {courses.length === 0 ? (
         <EmptyState icon={UserCheck} title="No courses yet" description="Add courses, then record attendance or import it from a Qalam CSV." />

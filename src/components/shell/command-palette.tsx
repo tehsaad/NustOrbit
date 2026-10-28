@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Moon, Plus, Sun } from "lucide-react";
-import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
+import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
 import { NAV } from "./nav";
 
 const EVENT = "orbit:command-palette";
@@ -41,6 +41,7 @@ export function CommandPalette() {
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen} title="Command palette" description="Jump to a page or run an action">
+      <Command>
       <CommandInput placeholder="Go to, create, search…" />
       <CommandList>
         <CommandEmpty>No results.</CommandEmpty>
@@ -79,6 +80,7 @@ export function CommandPalette() {
           </CommandItem>
         </CommandGroup>
       </CommandList>
+      </Command>
     </CommandDialog>
   );
 }
