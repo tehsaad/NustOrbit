@@ -72,6 +72,6 @@
     "unrs-resolver@1.12.2": true
   },
   "engines": {
-    "node": ">=22"
+    "node": "24.x"
   }
 }
