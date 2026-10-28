@@ -6,9 +6,9 @@ import { setupAction } from "./actions";
 
 export function SetupForm() {
   const router = useRouter();
-  const { state, formAction, pending } = useFormAction(setupAction, () => router.replace("/sign-in"));
+  const { state, onSubmit, pending } = useFormAction(setupAction, () => router.replace("/sign-in"));
   return (
-    <form action={formAction} className="mt-4 grid gap-3">
+    <form onSubmit={onSubmit} className="mt-4 grid gap-3">
       <TextField label="Setup token" name="token" type="password" autoComplete="off" required state={state} />
       <TextField label="Your name" name="name" autoComplete="name" required state={state} />
       <TextField label="Email" name="email" type="email" autoComplete="username" required state={state} />

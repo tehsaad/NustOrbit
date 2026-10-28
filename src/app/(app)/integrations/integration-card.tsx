@@ -72,9 +72,9 @@ function DisconnectButton({ provider, purgeLabel }: { provider: string; purgeLab
 }
 
 function SyncButton({ provider }: { provider: string }) {
-  const { formAction, pending } = useFormAction(syncNow);
+  const { onSubmit, pending } = useFormAction(syncNow);
   return (
-    <form action={formAction}>
+    <form onSubmit={onSubmit}>
       <input type="hidden" name="provider" value={provider} />
       <Button type="submit" variant="outline" size="sm" disabled={pending}>
         <RefreshCw className={cn(pending && "animate-spin")} /> Sync now

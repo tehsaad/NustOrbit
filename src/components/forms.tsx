@@ -1,13 +1,12 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -26,20 +25,34 @@ type FormAction = (prev: ActionResult, formData: FormData) => Promise<ActionResu
 
 const INITIAL: ActionResult = { ok: true };
 
+/**
+ * Runs a server action from a form submit. Feedback (toasts, onSuccess) is
+ * triggered from the submit callback itself, so it still fires if the form
+ * unmounts as a result of the change. Input is preserved when the action fails.
+ */
 export function useFormAction(action: FormAction, onSuccess?: () => void) {
-  const [state, formAction, pending] = useActionState(action, INITIAL);
-  const seen = useRef(state);
-  useEffect(() => {
-    if (state === seen.current) return;
-    seen.current = state;
-    if (state.ok) {
-      if (state.message) toast.success(state.message);
-      onSuccess?.();
-    } else {
-      toast.error(state.error);
-    }
-  }, [state, onSuccess]);
-  return { state, formAction, pending };
+  const [state, setState] = useState<ActionResult>(INITIAL);
+  const [pending, startTransition] = useTransition();
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    startTransition(async () => {
+      let result: ActionResult;
+      try {
+        result = await action(state, fd);
+      } catch {
+        result = { ok: false, error: "Something went wrong. Please try again." };
+      }
+      setState(result);
+      if (result.ok) {
+        if (result.message) toast.success(result.message);
+        onSuccess?.();
+      } else {
+        toast.error(result.error);
+      }
+    });
+  };
+  return { state, pending, onSubmit };
 }
 
 export function FieldError({ state, name }: { state: ActionResult; name: string }) {
@@ -81,7 +94,7 @@ export function FormDialog({
   wide?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const { state, formAction, pending } = useFormAction(action, () => setOpen(false));
+  const { state, onSubmit, pending } = useFormAction(action, () => setOpen(false));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
@@ -90,7 +103,7 @@ export function FormDialog({
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
-        <form action={formAction} className="grid gap-4">
+        <form onSubmit={onSubmit} className="grid gap-4">
           {children(state)}
           {!state.ok && !state.fieldErrors ? (
             <p className="text-sm text-destructive" role="alert">
@@ -108,9 +121,9 @@ export function FormDialog({
 
 /** Small inline form (e.g. a single button) bound to a server action. */
 export function InlineAction({ action, children, className, hidden }: { action: FormAction; children: React.ReactNode; className?: string; hidden?: Record<string, string> }) {
-  const { formAction } = useFormAction(action);
+  const { onSubmit } = useFormAction(action);
   return (
-    <form action={formAction} className={className}>
+    <form onSubmit={onSubmit} className={className}>
       {hidden ? Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />) : null}
       {children}
     </form>
@@ -134,7 +147,7 @@ export function ConfirmAction({
   confirmLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const { formAction, pending } = useFormAction(action, () => setOpen(false));
+  const { onSubmit, pending } = useFormAction(action, () => setOpen(false));
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
@@ -143,17 +156,16 @@ export function ConfirmAction({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
-        <form action={formAction}>
+        <form onSubmit={onSubmit}>
           {Object.entries(hidden).map(([k, v]) => (
             <input key={k} type="hidden" name={k} value={v} />
           ))}
           <AlertDialogFooter>
             <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
-            <AlertDialogAction asChild>
-              <SubmitButton pending={pending} variant="destructive">
-                {confirmLabel}
-              </SubmitButton>
-            </AlertDialogAction>
+            {/* A plain submit button: Radix's AlertDialogAction would close (and unmount) the form before it submits. */}
+            <SubmitButton pending={pending} variant="destructive">
+              {confirmLabel}
+            </SubmitButton>
           </AlertDialogFooter>
         </form>
       </AlertDialogContent>

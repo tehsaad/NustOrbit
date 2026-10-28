@@ -76,7 +76,7 @@ export function PushToggle({ configured, publicKey }: { configured: boolean; pub
           <Button size="sm" variant="outline" onClick={disable} disabled={busy}>
             <BellOff /> Disable on this device
           </Button>
-          <form action={test.formAction}>
+          <form onSubmit={test.onSubmit}>
             <Button size="sm" variant="ghost" type="submit" disabled={test.pending}>
               Send test
             </Button>

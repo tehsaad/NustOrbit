@@ -19,10 +19,10 @@ type Prefs = {
 const ZONES = ["Asia/Karachi", "UTC", "Asia/Dubai", "Asia/Riyadh", "Europe/London", "Europe/Berlin", "America/New_York", "America/Los_Angeles", "Asia/Kolkata", "Asia/Shanghai", "Australia/Sydney"];
 
 export function PreferencesForm({ prefs }: { prefs: Prefs }) {
-  const { state, formAction, pending } = useFormAction(savePreferences);
+  const { state, onSubmit, pending } = useFormAction(savePreferences);
   const zones = ZONES.includes(prefs.timezone) ? ZONES : [prefs.timezone, ...ZONES];
   return (
-    <form action={formAction} className="grid gap-4 sm:grid-cols-2">
+    <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
       <SelectField label="Timezone" name="timezone" state={state} defaultValue={prefs.timezone} options={zones.map((z) => ({ value: z, label: z }))} />
       <SelectField
         label="Week starts on"

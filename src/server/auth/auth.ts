@@ -10,6 +10,8 @@ import { recordAudit } from "@/server/audit";
 
 const DAY = 60 * 60 * 24;
 const idleDays = Number(process.env.SESSION_IDLE_DAYS ?? 14);
+// Failed-login budget per IP per 15 minutes (raised only in automated test environments).
+const signInMax = Number(process.env.AUTH_SIGNIN_RATE_MAX ?? 5);
 
 export const auth = betterAuth({
   appName: "Orbit",
@@ -51,7 +53,7 @@ export const auth = betterAuth({
     window: 60,
     max: 60,
     customRules: {
-      "/sign-in/email": { window: 15 * 60, max: 5 },
+      "/sign-in/email": { window: 15 * 60, max: signInMax },
       "/two-factor/verify-totp": { window: 15 * 60, max: 5 },
       "/two-factor/verify-backup-code": { window: 15 * 60, max: 5 },
       "/request-password-reset": { window: 60 * 60, max: 3 },

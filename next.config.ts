@@ -14,8 +14,10 @@ const nextConfig: NextConfig = {
   // model is used instead of Cache Components.
   cacheComponents: false,
   poweredByHeader: false,
+  outputFileTracingRoot: process.cwd(),
   serverExternalPackages: ["@node-rs/argon2"],
   turbopack: {
+    root: process.cwd(),
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
