@@ -145,6 +145,10 @@ model UserPreference {
   /// Minimum attendance percentage. Null until the student configures it from a verified policy.
   attendanceThresholdPct Float?
   attendancePolicyNote   String?
+  /// How LATE marks count toward attendance: "present" | "absent".
+  attendanceLateAs       String   @default("present")
+  /// How LEAVE marks count: "absent" | "present" | "excluded".
+  attendanceLeaveAs      String   @default("absent")
   /// Optional target course percentage used by the marks planner.
   defaultTargetPct       Float?
   weekStartsOn           Int      @default(1)
