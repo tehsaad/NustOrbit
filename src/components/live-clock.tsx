@@ -1,16 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { formatCountdown } from "@/domain/time";
 
-function useNow(intervalMs = 1000) {
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return now;
+/** Current time, re-rendering every `intervalMs`. Null during SSR to avoid hydration mismatch. */
+function useNow(intervalMs = 1000): Date | null {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const id = setInterval(onChange, intervalMs);
+      return () => clearInterval(id);
+    },
+    [intervalMs],
+  );
+  const tick = useSyncExternalStore(
+    subscribe,
+    () => Math.floor(Date.now() / intervalMs),
+    () => null,
+  );
+  return tick == null ? null : new Date(tick * intervalMs);
 }
 
 export function LiveClock({ tz }: { tz: string }) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { BellOff, BellRing } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,18 +13,22 @@ function urlBase64ToUint8Array(base64: string) {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
+const noopSubscribe = () => () => {};
+
 export function PushToggle({ configured, publicKey }: { configured: boolean; publicKey?: string }) {
-  const [supported, setSupported] = useState<boolean | null>(null);
+  const supported = useSyncExternalStore(
+    noopSubscribe,
+    () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window,
+    () => null,
+  );
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
   const test = useFormAction(sendTestPush);
 
   useEffect(() => {
-    const ok = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-    setSupported(ok);
-    if (!ok) return;
+    if (!supported) return;
     navigator.serviceWorker.getRegistration("/").then((reg) => reg?.pushManager.getSubscription().then((s) => setSubscribed(Boolean(s))));
-  }, []);
+  }, [supported]);
 
   if (!configured) return <p className="text-xs text-muted-foreground">Web push keys (VAPID) are not configured on this deployment.</p>;
   if (supported === false) return <p className="text-xs text-muted-foreground">This browser doesn&apos;t support push notifications. On iPhone, add Orbit to the Home Screen first.</p>;

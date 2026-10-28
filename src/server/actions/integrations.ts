@@ -184,3 +184,31 @@ export async function sendTestPush(_: ActionResult): Promise<ActionResult> {
   if (r.delivered === 0) return { ok: false, error: r.error ?? "Not delivered" };
   return { ok: true, message: `Sent to ${r.delivered} device${r.delivered === 1 ? "" : "s"}` };
 }
+
+/** Turns an email the student picked into a *suggested* assignment (must be confirmed later). */
+export async function createSuggestionFromEmail(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  const user = await requireUser();
+  const p = z
+    .object({ messageId: z.string().regex(/^[A-Za-z0-9_-]{6,64}$/), title: z.string().trim().min(1).max(200), dueAt: z.string().max(30).optional(), kind: z.enum(["assignment", "exam"]) })
+    .safeParse(Object.fromEntries(fd));
+  if (!p.success) return { ok: false, error: "Check the title and date." };
+  const tz = await getTimezone(user.id);
+  const { localToUtc } = await import("./util");
+  const due = localToUtc(p.data.dueAt || undefined, tz);
+  const url = `https://mail.google.com/mail/u/0/#all/${p.data.messageId}`;
+  if (p.data.kind === "exam") {
+    if (!due) return { ok: false, error: "An exam suggestion needs a date." };
+    await db.calendarEvent.upsert({
+      where: { userId_source_externalId: { userId: user.id, source: "GMAIL", externalId: p.data.messageId } },
+      create: { userId: user.id, source: "GMAIL", externalId: p.data.messageId, title: p.data.title, kind: "EXAM", startsAt: due, endsAt: new Date(due.getTime() + 2 * 3600_000), suggested: true, readOnly: false, url },
+      update: { title: p.data.title, startsAt: due, endsAt: new Date(due.getTime() + 2 * 3600_000) },
+    });
+  } else {
+    await db.assignment.upsert({
+      where: { userId_source_externalId: { userId: user.id, source: "GMAIL", externalId: p.data.messageId } },
+      create: { userId: user.id, source: "GMAIL", externalId: p.data.messageId, title: p.data.title, dueAt: due ?? null, suggested: true, url },
+      update: { title: p.data.title, dueAt: due ?? null },
+    });
+  }
+  return finish("Added as a suggestion. Confirm it once you've checked the details.");
+}

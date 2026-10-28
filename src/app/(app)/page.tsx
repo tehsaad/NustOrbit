@@ -308,30 +308,31 @@ function ClassBlock({ c, tz, live }: { c: { title: string; startsAt: Date; endsA
 async function InboxCard({ userId }: { userId: string }) {
   const conn = await db.integrationConnection.findUnique({ where: { userId_provider: { userId, provider: "gmail" } } });
   if (!conn) return null;
+  let inbox: Awaited<ReturnType<typeof readInboxSummary>> | null = null;
+  let error: string | null = null;
   try {
-    const inbox = await readInboxSummary(conn, "is:unread newer_than:7d");
-    const academic = inbox.messages.filter((m) => m.signals.length > 0);
-    return (
-      <div className="space-y-2 text-sm">
-        <p>
-          <span className="text-2xl font-semibold tabular-nums">{inbox.unread}</span> <span className="text-muted-foreground">unread in inbox</span>
-        </p>
-        {academic.slice(0, 3).map((m) => (
-          <div key={m.id} className="rounded-md bg-muted/50 px-2 py-1.5">
-            <p className="truncate font-medium">{m.subject || "(no subject)"}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {m.signals.map((s) => s.kind).join(", ")} · suggestion
-            </p>
-          </div>
-        ))}
-        <Link href="/integrations/gmail" className="text-xs text-primary hover:underline">
-          Open inbox insights →
-        </Link>
-      </div>
-    );
+    inbox = await readInboxSummary(conn, "is:unread newer_than:7d");
   } catch (e) {
-    return <p className="text-sm text-destructive">Couldn&apos;t load Gmail: {describeError(e)}</p>;
+    error = describeError(e);
   }
+  if (!inbox) return <p className="text-sm text-destructive">Couldn&apos;t load Gmail: {error}</p>;
+  const academic = inbox.messages.filter((m) => m.signals.length > 0);
+  return (
+    <div className="space-y-2 text-sm">
+      <p>
+        <span className="text-2xl font-semibold tabular-nums">{inbox.unread}</span> <span className="text-muted-foreground">unread in inbox</span>
+      </p>
+      {academic.slice(0, 3).map((m) => (
+        <div key={m.id} className="rounded-md bg-muted/50 px-2 py-1.5">
+          <p className="truncate font-medium">{m.subject || "(no subject)"}</p>
+          <p className="truncate text-xs text-muted-foreground">{m.signals.map((s) => s.kind).join(", ")} · suggestion</p>
+        </div>
+      ))}
+      <Link href="/integrations/gmail" className="text-xs text-primary hover:underline">
+        Open inbox insights →
+      </Link>
+    </div>
+  );
 }
 
 function SourcesStrip({ connections }: { connections: { provider: string; status: string; lastSuccessAt: Date | null }[] }) {

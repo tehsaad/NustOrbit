@@ -137,3 +137,29 @@
     @apply font-sans;
   }
 }
+/* Validated 2-series chart palette (dataviz validator: light + dark pass). */
+:root {
+  --viz-you: #5b5fe0;
+  --viz-avg: #c46a1f;
+}
+.dark {
+  --viz-you: #7175ea;
+  --viz-avg: #c9772f;
+}
+
+/* Minimal Markdown styles for note previews (no raw HTML is rendered). */
+.prose-orbit { @apply text-sm leading-relaxed; }
+.prose-orbit h1 { @apply mb-3 mt-6 text-2xl font-semibold; }
+.prose-orbit h2 { @apply mb-2 mt-5 text-xl font-semibold; }
+.prose-orbit h3 { @apply mb-2 mt-4 text-lg font-semibold; }
+.prose-orbit p { @apply my-2; }
+.prose-orbit ul { @apply my-2 list-disc pl-6; }
+.prose-orbit ol { @apply my-2 list-decimal pl-6; }
+.prose-orbit a { @apply text-primary underline; }
+.prose-orbit code { @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]; }
+.prose-orbit pre { @apply my-3 overflow-x-auto rounded-lg bg-muted p-3; }
+.prose-orbit pre code { @apply bg-transparent p-0; }
+.prose-orbit blockquote { @apply my-3 border-l-2 pl-3 text-muted-foreground; }
+.prose-orbit table { @apply my-3 w-full text-left; }
+.prose-orbit th, .prose-orbit td { @apply border-b px-2 py-1; }
+.prose-orbit input[type="checkbox"] { @apply mr-1.5; }
