@@ -18,6 +18,11 @@ Stated plainly so nothing is mistaken for a working live integration.
 - **Email** (reminders, password reset) needs `RESEND_API_KEY` and `EMAIL_FROM`, which aren't set. Without them, use the documented recovery procedure.
 - **Reminder timing** depends on the GitHub Actions schedule (every 10 min, best-effort, sometimes delayed) once its secrets are set. Until then only the daily Vercel Cron runs. Occurrences missed by more than 24 h are recorded as skipped, not sent late.
 
+## Verification status
+
+- Verified live in production: health/DB, generic sign-in errors, cross-origin rejection, sign-up disabled, sign-in rate limiting (429), Argon2 hashing on Vercel, production migration guard.
+- Verified on a local production build with a disposable database (Playwright): setup, sign-in, TOTP enable/verify/disable, every module page, data isolation, session revocation, mobile navigation. No production account existed during the build, so your first sign-in is the first live authenticated check.
+
 ## Product
 
 - Letter grades are never predicted, and GPA comes only from grade points you record. Orbit doesn't know NUST's grading scale.

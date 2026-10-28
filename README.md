@@ -33,6 +33,8 @@ Next.js 16 (App Router) · TypeScript strict · Tailwind CSS 4 · shadcn/ui · L
 ```bash
 npm install
 vercel link && vercel env pull .env.local   # or copy .env.example → .env.local and fill it
+# ⚠ Sensitive Vercel variables (SETUP_TOKEN, CRON_SECRET, secrets) are NOT downloaded by env pull.
+#   For this deployment a private copy lives in ~/.config/orbit/production-secrets.env.
 npm run db:migrate                          # applies prisma/migrations
 npm run dev                                  # http://localhost:3000
 ```

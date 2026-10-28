@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import pg from "pg";
 import { randomUUID } from "node:crypto";
 import { ADMIN, signIn } from "./helpers";
+import { totp } from "./totp";
 
 const SETUP_TOKEN = "e2e-setup-token-0123456789abcdef";
 const DB = "postgresql://postgres:password@localhost:54329/orbit_test";
@@ -205,4 +206,36 @@ test("sessions can be listed and revoked server-side", async ({ page, browser })
   await expect(page).toHaveURL(/\/sign-in$/);
   await page.goto("/");
   await expect(page).toHaveURL(/\/sign-in$/);
+});
+
+test("TOTP two-step verification: enable, sign in with a code, disable", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/settings/security");
+  await page.getByLabel("Confirm with your password").fill(ADMIN.password);
+  await page.getByRole("button", { name: "Set up" }).click();
+  const secret = (await page.locator("code").first().innerText()).trim();
+  expect(secret).toMatch(/^[A-Z2-7]+=*$/);
+  await page.getByLabel("Verification code").fill(totp(secret));
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.getByText("Enabled. Sign-ins require a code")).toBeVisible();
+
+  // Sign out, then sign in: the password step must lead to the code step.
+  await page.context().clearCookies();
+  await page.goto("/sign-in");
+  await page.getByLabel("Email").fill(ADMIN.email);
+  await page.getByLabel("Password", { exact: true }).fill(ADMIN.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/sign-in\/two-factor$/);
+  await page.getByLabel("Code").fill("000000");
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.getByText("That code didn't work.")).toBeVisible();
+  await page.getByLabel("Code").fill(totp(secret));
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page).toHaveURL("/");
+
+  // Turn it off again so later tests can sign in with a password only.
+  await page.goto("/settings/security");
+  await page.getByLabel("Confirm with your password").fill(ADMIN.password);
+  await page.getByRole("button", { name: "Turn off" }).click();
+  await expect(page.getByText("Add a second step at sign-in")).toBeVisible();
 });

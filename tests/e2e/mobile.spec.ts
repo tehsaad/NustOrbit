@@ -20,3 +20,13 @@ test("mobile bottom navigation and drawer", async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+test("no page scrolls horizontally at phone width", async ({ page }) => {
+  await signIn(page);
+  for (const path of ["/", "/academics", "/courses", "/marks", "/assignments", "/attendance", "/timetable", "/calendar", "/calendar?view=month", "/tasks", "/notes", "/integrations", "/settings", "/settings/security"]) {
+    await page.goto(path);
+    await page.waitForLoadState("networkidle");
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `${path} overflows horizontally`).toBeLessThanOrEqual(1);
+  }
+});

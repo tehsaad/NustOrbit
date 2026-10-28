@@ -30,14 +30,18 @@ Set in Vercel → Project → Settings → Environment Variables. Values for eve
 
 ## First-time setup
 
-1. Read the setup token: `vercel env pull .env.local` doesn't download sensitive values. Use the copy in the local `.env.local` created during provisioning (`SETUP_TOKEN=…`), or set a new one: `vercel env rm SETUP_TOKEN production && openssl rand -base64 24 | vercel env add SETUP_TOKEN production` and redeploy.
+1. Get the setup token. Sensitive Vercel variables can't be read back (`vercel env pull` writes them empty and **overwrites `.env.local`**). The generated values are saved in `~/.config/orbit/production-secrets.env` (mode 600) on the machine that provisioned Orbit, and in that machine's `.env.local` until the next `env pull`. If lost, set a new token: `vercel env rm SETUP_TOKEN production && openssl rand -base64 24 | vercel env add SETUP_TOKEN production`, then redeploy.
 2. Open https://nustorbit.vercel.app/setup, enter the token, your name, email and a 12+ character password.
 3. Remove the token: `vercel env rm SETUP_TOKEN production && vercel env rm SETUP_TOKEN preview`.
 4. Sign in, open Settings → Security, and enable TOTP.
 
+## Preview deployments
+
+The GitHub repository is connected to Vercel, so pull requests get preview deployments. Previews are protected by **Vercel Authentication** (unauthenticated requests get HTTP 302 to Vercel login). They share the production environment's secrets and, unless the Neon integration creates per-preview branches, the same database. Treat previews as production-adjacent.
+
 ## Deploying
 
-- `vercel deploy --prod` from a clean checkout, or connect the Git repository (`vercel git connect`) so pushes to `main` deploy automatically.
+- Pushes to `main` deploy to production automatically (Git integration). `vercel deploy --prod` also works from a clean checkout.
 - The Vercel build runs `npm run vercel-build`: `prisma generate`, then `prisma migrate deploy` **only when `VERCEL_ENV=production`**, then `next build`. Preview builds never migrate.
 
 ## Migrations
@@ -58,8 +62,8 @@ Set in Vercel → Project → Settings → Environment Variables. Values for eve
 The GitHub workflow needs two repository secrets:
 
 ```bash
-gh secret set ORBIT_URL --body "https://nustorbit.vercel.app"
-gh secret set CRON_SECRET          # paste the same value as Vercel's CRON_SECRET (from your local .env.local)
+gh secret set ORBIT_URL --repo tehsaad/NustOrbit --body "https://nustorbit.vercel.app"
+grep '^CRON_SECRET=' ~/.config/orbit/production-secrets.env | cut -d= -f2- | tr -d '"' | gh secret set CRON_SECRET --repo tehsaad/NustOrbit
 ```
 
 Scheduled workflows only run from the default branch, can be delayed by GitHub, and are disabled after 60 days without repository activity (re-enable in the Actions tab).

@@ -20,7 +20,7 @@ export function SectionCard({
   className?: string;
 }) {
   return (
-    <section className={cn("flex flex-col rounded-xl border bg-card p-4 shadow-xs", className)}>
+    <section className={cn("flex min-w-0 flex-col rounded-xl border bg-card p-4 shadow-xs", className)}>
       <header className="mb-3 flex items-center gap-2">
         {Icon ? <Icon className="size-4 text-primary" aria-hidden="true" /> : null}
         <h2 className="text-sm font-semibold">{href ? <Link href={href} className="hover:underline">{title}</Link> : title}</h2>

@@ -15,7 +15,7 @@
 - Opaque session tokens stored in the `session` table; every request is validated against the database (cookie cache disabled), so revocation is immediate.
 - Cookies: `HttpOnly`, `Secure` in production (`__Secure-` prefix), `SameSite=Lax`.
 - **Idle expiry**: `SESSION_IDLE_DAYS` (default 14), rolling, refreshed at most daily.
-- **Absolute expiry**: `SESSION_ABSOLUTE_DAYS` (default 60) since sign-in, enforced in `getCurrentSession()`, which deletes the session when exceeded.
+- **Absolute expiry**: `SESSION_ABSOLUTE_DAYS` (default 60) since sign-in, enforced in `getCurrentSession()`, which deletes the session when exceeded. It runs on every page, server action and Orbit API route. Better Auth's own `/api/auth/*` endpoints don't run that check, so an over-cap session could still call e.g. change-password until the next page load deletes it.
 - **Rotation**: every sign-in creates a new session token. Pre-auth tokens are never upgraded, which prevents fixation. Password changes rotate and revoke the others.
 - **Revocation UI**: Settings → Security lists active sessions (device, IP, created, last active). You can revoke one or all others. Session tokens never reach the browser in that list.
 - "Keep me signed in" off gives a browser-session cookie.

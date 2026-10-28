@@ -41,7 +41,8 @@ export async function createInitialAdmin(input: { token: string; name: string; e
         await tx.userPreference.create({ data: { userId, timezone: process.env.ORBIT_TIMEZONE ?? "Asia/Karachi" } });
         await tx.auditEvent.create({ data: { userId, action: "auth.setup.admin_created" } });
       },
-      { isolationLevel: "Serializable" },
+      // Generous waits: the first request may hit a database waking from scale-to-zero.
+      { isolationLevel: "Serializable", maxWait: 15_000, timeout: 20_000 },
     );
     return { ok: true };
   } catch (error) {
