@@ -24,6 +24,18 @@ Production: https://nustorbit.vercel.app (private; registration is disabled)
 | Integrations | Registry with capabilities, permissions, freshness, sync history, connect/disconnect, encrypted credentials |
 | Security | Argon2id, DB sessions with idle + absolute expiry, revocation UI, TOTP 2FA, rate limiting, audit log |
 
+## Status (2026-10-29)
+
+| Area | State |
+| --- | --- |
+| Production | Healthy at https://nustorbit.vercel.app (Git-connected; `main` deploys automatically) |
+| First account | Not created yet. Run `npm run admin:invite -- --email you@example.com` and open the printed link (single use, 24 h) |
+| Tests | 83 unit + integration, 13 Playwright E2E; all passing locally and in GitHub CI |
+| NUST LMS | Verified Moodle with web services enabled. Live sync needs `LMS_LEGACY_TLS=1` (the server's TLS is outdated) or `.ics` upload. Not yet tested with real student data |
+| Qalam | CSV import (marks, attendance, timetable, results, deadlines). No API; automated access blocked |
+| Google Calendar / Gmail | Implemented; needs `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` |
+| Reminders | Dispatch every 10 min via GitHub Actions (verified run) + daily Vercel Cron. Push needs per-device opt-in; email not configured |
+
 ## Stack
 
 Next.js 16 (App Router) · TypeScript strict · Tailwind CSS 4 · shadcn/ui · Lucide · Recharts · PostgreSQL (Neon) · Prisma 7 · Zod · Better Auth · Vitest · Playwright · Vercel.
