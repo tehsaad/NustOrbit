@@ -230,6 +230,7 @@ export function IntegrationCard({
                         { value: "attendance", label: "Attendance" },
                         { value: "timetable", label: "Timetable" },
                         { value: "results", label: "Semester results" },
+                        { value: "deadlines", label: "Assignment deadlines" },
                       ]}
                     />
                     <div className="space-y-2 rounded-lg bg-muted/50 p-3 text-xs">

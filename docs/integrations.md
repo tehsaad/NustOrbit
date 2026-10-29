@@ -29,7 +29,8 @@ Use **Integrations → Qalam → Import CSV**. The column templates are shown in
 | Kind | Columns |
 | --- | --- |
 | marks | `course,assessment,category,obtained,max,weight,class_average` |
-| attendance | `course,date,status,sessions` (status: PRESENT/ABSENT/LEAVE/LATE; date: YYYY-MM-DD) |
+| attendance | `course,date,time,status,sessions` (status: PRESENT/ABSENT/LEAVE/LATE; date: YYYY-MM-DD; optional time HH:mm separates two classes on one day — without it, same-day rows are kept apart by their order in the file) |
+| deadlines | `course,title,due,max,weight,url` (due: `YYYY-MM-DD HH:mm` local time; submission status stays Unknown) |
 | timetable | `course,day,start,end,room,instructor,kind` |
 | results | `term,course,credit_hours,grade,grade_points` |
 

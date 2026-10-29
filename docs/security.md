@@ -3,7 +3,13 @@
 ## Accounts and sign-in
 
 - **Library**: Better Auth with the Prisma adapter. Orbit doesn't implement its own session protocol.
-- **Registration disabled** (`emailAndPassword.disableSignUp`). The only way to create an account is `/setup`, which requires the server-side `SETUP_TOKEN`, works only while the database has zero users, and runs in a `Serializable` transaction so two concurrent attempts can't both succeed. Remove `SETUP_TOKEN` from the environment after setup.
+- **Registration disabled** (`emailAndPassword.disableSignUp`). There is no public sign-up or setup endpoint.
+- **First account (bootstrap)**: `npm run admin:invite -- --email you@example.com` runs on a machine with direct database access (it reads `DATABASE_URL_UNPOOLED`). It issues one single-use claim link and refuses to run once any user exists.
+  - The link carries a 256-bit random token in the URL **fragment** (`/claim#…`). Browsers never send fragments to the server, so the token stays out of server, proxy and analytics logs. The page strips it from the address bar right away.
+  - Only the SHA-256 of the token is stored (`verification` table, identifier `orbit-bootstrap:<email>`), with an expiry (default 24 h, max 72 h). Issuing a new link revokes the previous one.
+  - On submit, `/claim` looks up the hash before doing any password hashing. Then one `Serializable` transaction consumes the invite, checks that zero users exist, creates the account and deletes all remaining invites. Replays, expired links and concurrent claims all fail. Once an account exists, bootstrap is permanently closed (the page shows "Setup is complete" and the CLI exits with code 3).
+  - The new owner is signed in with a freshly created session, so no pre-existing session is reused.
+  - `npm run admin:invite -- --revoke` deletes any outstanding link.
 - **Password hashing**: Argon2id via `@node-rs/argon2` (19 MiB memory, t=2, p=1; OWASP minimums), plugged into Better Auth's `password.hash/verify`. Minimum length is 12.
 - **Generic errors**: sign-in always returns "Incorrect email or password".
 - **Rate limiting** (stored in Postgres, so it holds across serverless instances): 5 sign-in attempts per IP per 15 min, 5 TOTP or backup-code attempts per 15 min, 3 reset requests per hour, and 60 requests/min elsewhere on the auth API. Verified in production: the 6th attempt returns HTTP 429.

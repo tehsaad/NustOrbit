@@ -30,7 +30,7 @@ const INITIAL: ActionResult = { ok: true };
  * triggered from the submit callback itself, so it still fires if the form
  * unmounts as a result of the change. Input is preserved when the action fails.
  */
-export function useFormAction(action: FormAction, onSuccess?: () => void) {
+export function useFormAction(action: FormAction, onSuccess?: (result: ActionResult) => void) {
   const [state, setState] = useState<ActionResult>(INITIAL);
   const [pending, startTransition] = useTransition();
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -46,7 +46,7 @@ export function useFormAction(action: FormAction, onSuccess?: () => void) {
       setState(result);
       if (result.ok) {
         if (result.message) toast.success(result.message);
-        onSuccess?.();
+        onSuccess?.(result);
       } else {
         toast.error(result.error);
       }

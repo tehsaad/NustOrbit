@@ -23,7 +23,7 @@ export const auth = betterAuth({
   database: prismaAdapter(db, { provider: "postgresql" }),
   emailAndPassword: {
     enabled: true,
-    // Private deployment: accounts are created only through the token-gated /setup flow.
+    // Private deployment: the only account is created via a one-time CLI-issued claim link (see src/server/auth/bootstrap.ts).
     disableSignUp: true,
     minPasswordLength: 12,
     maxPasswordLength: 256,

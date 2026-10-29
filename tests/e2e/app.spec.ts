@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
 import pg from "pg";
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { ADMIN, signIn } from "./helpers";
 import { totp } from "./totp";
 
-const SETUP_TOKEN = "e2e-setup-token-0123456789abcdef";
 const DB = "postgresql://postgres:password@localhost:54329/orbit_test";
 
 test.describe.configure({ mode: "serial" });
@@ -19,23 +19,58 @@ test("private routes redirect to sign-in and health exposes no private data", as
   expect((await request.get("/api/export/backup")).status()).toBe(401);
 });
 
-test("token-gated setup creates the single admin and then closes", async ({ page }) => {
+function issueInvite(): string {
+  const r = spawnSync("npx", ["tsx", "scripts/admin-invite.mts", "--email", ADMIN.email, "--base-url", "http://localhost:3100"], {
+    env: { ...process.env, DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB },
+    encoding: "utf8",
+  });
+  expect(r.status, r.stderr).toBe(0);
+  return r.stdout.trim();
+}
+
+test("first account is created only through a one-time claim link", async ({ page, browser }) => {
+  // No public setup route, and /claim without a link can't create anything.
   await page.goto("/sign-in");
-  await page.getByRole("link", { name: /Go to setup/ }).click();
-  await page.getByLabel("Setup token").fill("wrong-token-wrong-token");
+  await expect(page.getByText("Orbit hasn't been set up yet.")).toBeVisible();
+  await page.goto("/setup");
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await page.goto("/claim");
+  await expect(page.getByText("Open your one-time setup link")).toBeVisible();
+
+  // An expired link is rejected.
+  const expired = issueInvite();
+  const client = new pg.Client({ connectionString: DB });
+  await client.connect();
+  await client.query(`UPDATE verification SET "expiresAt" = '2000-01-01' WHERE identifier LIKE 'orbit-bootstrap:%'`);
+  await client.end();
+  await page.goto(expired);
   await page.getByLabel("Your name").fill(ADMIN.name);
-  await page.getByLabel("Email").fill(ADMIN.email);
   await page.getByLabel("Password", { exact: true }).fill(ADMIN.password);
   await page.getByLabel("Confirm password").fill(ADMIN.password);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("alert").filter({ hasText: /invalid/i }).first()).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: /invalid, expired or already used/ }).first()).toBeVisible();
 
-  await page.getByLabel("Setup token").fill(SETUP_TOKEN);
+  // A fresh link works once, strips the token from the address bar, and signs the owner in.
+  const link = issueInvite();
+  await page.goto(link);
+  await expect(page).toHaveURL(/\/claim$/);
+  await page.getByLabel("Your name").fill(ADMIN.name);
+  await page.getByLabel("Password", { exact: true }).fill(ADMIN.password);
+  await page.getByLabel("Confirm password").fill(ADMIN.password);
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page).toHaveURL("/");
+  await expect(page.getByRole("heading", { name: /Test/ })).toBeVisible();
 
-  await page.goto("/setup");
-  await expect(page.getByText("Setup is complete")).toBeVisible();
+  // Replaying the link in another browser finds bootstrap closed.
+  const other = await browser.newContext();
+  const otherPage = await other.newPage();
+  await otherPage.goto(link);
+  await expect(otherPage.getByText("Setup is complete.")).toBeVisible();
+  await other.close();
+
+  // And the CLI refuses to issue more links.
+  const again = spawnSync("npx", ["tsx", "scripts/admin-invite.mts", "--email", "x@example.test"], { env: { ...process.env, DATABASE_URL: DB, DATABASE_URL_UNPOOLED: DB }, encoding: "utf8" });
+  expect(again.status).toBe(3);
 });
 
 test("sign-in rejects bad passwords with a generic message", async ({ page }) => {
@@ -50,7 +85,7 @@ test("overview shows onboarding, never sample data", async ({ page }) => {
   await signIn(page);
   await expect(page.getByRole("heading", { name: /Test/ })).toBeVisible();
   await expect(page.getByText("Start by adding your semester")).toBeVisible();
-  await expect(page.getByText("Gmail not connected")).toBeVisible();
+  await expect(page.getByText("Gmail not available yet")).toBeVisible();
   await expect(page.getByText("No graded assessments yet.")).toBeVisible();
 });
 
@@ -133,7 +168,7 @@ test("timetable, assignments, tasks and notes", async ({ page }) => {
   // Command palette entry point.
   await page.goto("/notes/new");
   await expect(page).toHaveURL(/\/notes\/(?!new)[^/]+$/);
-  await expect(page.getByLabel("Title")).toHaveValue("Untitled");
+  await expect(page.getByLabel("Title").filter({ visible: true })).toHaveValue("Untitled");
 });
 
 test("calendar event, reminder and conflict-free views render", async ({ page }) => {

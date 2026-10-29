@@ -33,13 +33,17 @@ Next.js 16 (App Router) · TypeScript strict · Tailwind CSS 4 · shadcn/ui · L
 ```bash
 npm install
 vercel link && vercel env pull .env.local   # or copy .env.example → .env.local and fill it
-# ⚠ Sensitive Vercel variables (SETUP_TOKEN, CRON_SECRET, secrets) are NOT downloaded by env pull.
+# ⚠ Sensitive Vercel variables (CRON_SECRET and other secrets) are NOT downloaded by env pull.
 #   For this deployment a private copy lives in ~/.config/orbit/production-secrets.env.
 npm run db:migrate                          # applies prisma/migrations
 npm run dev                                  # http://localhost:3000
 ```
 
-Then open `/setup`, enter `SETUP_TOKEN`, and create your account. Setup works only while the database has zero users.
+Create the single account with a one-time link (works only while the database has zero users):
+
+```bash
+npm run admin:invite -- --email you@example.com   # prints https://…/claim#<single-use token>, valid 24 h
+```
 
 ## Scripts
 
@@ -50,6 +54,7 @@ Then open `/setup`, enter `SETUP_TOKEN`, and create your account. Setup works on
 | `npm test` | Vitest: unit + integration (integration starts a disposable embedded Postgres; never touches your DB) |
 | `npm run test:e2e` | Playwright against a production build + disposable Postgres |
 | `npm run db:migrate` / `db:deploy` / `db:status` | Prisma migrations |
+| `npm run admin:invite -- --email …` | Issue the one-time first-account link (`--revoke` to cancel) |
 
 ## Documentation
 

@@ -3,7 +3,6 @@ import { randomBytes } from "node:crypto";
 
 const PORT = 3100;
 const TEST_URL = "postgresql://postgres:password@localhost:54329/orbit_test";
-export const SETUP_TOKEN = "e2e-setup-token-0123456789abcdef";
 
 const env = {
   DATABASE_URL: TEST_URL,
@@ -12,7 +11,6 @@ const env = {
   BETTER_AUTH_URL: `http://localhost:${PORT}`,
   ORBIT_VAULT_KEY: randomBytes(32).toString("base64"),
   CRON_SECRET: randomBytes(32).toString("base64url"),
-  SETUP_TOKEN,
   ORBIT_TIMEZONE: "Asia/Karachi",
   PORT: String(PORT),
   AUTH_SIGNIN_RATE_MAX: "100",

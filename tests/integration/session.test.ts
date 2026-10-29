@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { isPastAbsoluteLifetime } from "@/server/auth/session";
-import { setupTokenMatches } from "@/server/auth/setup";
 import { isAuthorizedCron } from "@/server/cron-auth";
 
 describe("session lifetime", () => {
@@ -11,15 +10,7 @@ describe("session lifetime", () => {
   });
 });
 
-describe("setup and cron secrets", () => {
-  it("requires the exact setup token", () => {
-    process.env.SETUP_TOKEN = "s".repeat(32);
-    expect(setupTokenMatches("s".repeat(32))).toBe(true);
-    expect(setupTokenMatches("s".repeat(31))).toBe(false);
-    expect(setupTokenMatches("")).toBe(false);
-    delete process.env.SETUP_TOKEN;
-    expect(setupTokenMatches("anything")).toBe(false);
-  });
+describe("cron secret", () => {
   it("authorizes cron only with the bearer secret", () => {
     const ok = new Request("http://x/api/cron/sync", { headers: { authorization: `Bearer ${process.env.CRON_SECRET}` } });
     const bad = new Request("http://x/api/cron/sync", { headers: { authorization: "Bearer nope" } });

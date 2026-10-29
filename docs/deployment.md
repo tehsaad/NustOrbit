@@ -20,7 +20,6 @@ Set in Vercel → Project → Settings → Environment Variables. Values for eve
 | `BETTER_AUTH_URL` | yes (prod) | `https://nustorbit.vercel.app` |
 | `ORBIT_VAULT_KEY` | yes | 32 bytes base64; `ORBIT_VAULT_KEY_VERSION`, `ORBIT_VAULT_KEY_PREVIOUS` for rotation |
 | `CRON_SECRET` | yes | Bearer token for `/api/cron/*` (Vercel Cron sends it automatically) |
-| `SETUP_TOKEN` | until setup | Remove after creating your account |
 | `ORBIT_TIMEZONE` | no | Default `Asia/Karachi` |
 | `SESSION_IDLE_DAYS`, `SESSION_ABSOLUTE_DAYS`, `AUTH_SIGNIN_RATE_MAX` | no | Defaults 14 / 60 / 5 |
 | `LMS_ALLOWED_HOSTS` | no | Default `lms.nust.edu.pk` |
@@ -30,9 +29,13 @@ Set in Vercel → Project → Settings → Environment Variables. Values for eve
 
 ## First-time setup
 
-1. Get the setup token. Sensitive Vercel variables can't be read back (`vercel env pull` writes them empty and **overwrites `.env.local`**). The generated values are saved in `~/.config/orbit/production-secrets.env` (mode 600) on the machine that provisioned Orbit, and in that machine's `.env.local` until the next `env pull`. If lost, set a new token: `vercel env rm SETUP_TOKEN production && openssl rand -base64 24 | vercel env add SETUP_TOKEN production`, then redeploy.
-2. Open https://nustorbit.vercel.app/setup, enter the token, your name, email and a 12+ character password.
-3. Remove the token: `vercel env rm SETUP_TOKEN production && vercel env rm SETUP_TOKEN preview`.
+1. On a machine with the project and its `.env.local` (database credentials), run:
+   ```bash
+   npm run admin:invite -- --email you@example.com          # prints a single-use link valid for 24 h
+   npm run admin:invite -- --email you@example.com --out ~/orbit-invite.txt   # or write it to a mode-600 file
+   ```
+2. Open the link, choose your name and a 12+ character password. You're signed in immediately.
+3. Bootstrap is now closed for good: the link is consumed, all other invites are deleted, and the CLI refuses to run.
 4. Sign in, open Settings → Security, and enable TOTP.
 
 ## Preview deployments

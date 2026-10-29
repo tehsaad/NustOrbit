@@ -119,6 +119,45 @@ describe("credential vault storage", () => {
 });
 
 describe("Qalam CSV import", () => {
+  it("keeps two same-day classes of one course as separate records", async () => {
+    const userId = await makeUser("qalam-sameday");
+    const csv = "course,date,status,sessions\nCS-212,2026-10-05,PRESENT,1\nCS-212,2026-10-05,ABSENT,3\n";
+    expect((await importQalamCsv(userId, "attendance", csv, "Asia/Karachi")).imported).toBe(2);
+    await importQalamCsv(userId, "attendance", csv, "Asia/Karachi");
+    const rows = await db.attendanceRecord.findMany({ where: { userId }, orderBy: { sessions: "asc" } });
+    expect(rows.map((r) => [r.status, r.sessions])).toEqual([["PRESENT", 1], ["ABSENT", 3]]);
+
+    const timed = "course,date,time,status\nMATH-101,2026-10-06,09:00,PRESENT\nMATH-101,2026-10-06,14:00,LATE\n";
+    await importQalamCsv(userId, "attendance", timed, "Asia/Karachi");
+    const math = await db.attendanceRecord.findMany({ where: { userId, status: { in: ["PRESENT", "LATE"] }, course: { code: "MATH-101" } }, orderBy: { date: "asc" } });
+    expect(math.map((r) => r.date.toISOString())).toEqual(["2026-10-06T04:00:00.000Z", "2026-10-06T09:00:00.000Z"]);
+  });
+
+  it("imports marks with weights and class averages labelled as imported", async () => {
+    const userId = await makeUser("qalam-marks");
+    const csv = "course,assessment,category,obtained,max,weight,class_average\nCS-212,Quiz 1,QUIZ,8,10,2.5,6.4\nCS-212,Mid,MIDTERM,,50,30,\nCS-212,Bad,QUIZ,5,0,1,\n";
+    const r = await importQalamCsv(userId, "marks", csv, "Asia/Karachi");
+    expect(r.imported).toBe(2);
+    expect(r.skipped[0]).toMatchObject({ row: 4 });
+    const q = await db.assessment.findFirstOrThrow({ where: { userId, title: "Quiz 1" } });
+    expect(q).toMatchObject({ obtainedMarks: 8, maxMarks: 10, weightPct: 2.5, classAverage: 6.4, classAverageSrc: "IMPORT", source: "IMPORT" });
+    const mid = await db.assessment.findFirstOrThrow({ where: { userId, title: "Mid" } });
+    expect(mid.obtainedMarks).toBeNull();
+    expect(mid.classAverage).toBeNull();
+  });
+
+  it("imports deadlines in local time without claiming submission", async () => {
+    const userId = await makeUser("qalam-due");
+    const csv = "course,title,due,max,weight,url\nCS-212,Assignment 2,2026-11-12 23:59,10,5,https://lms.example.edu/a/2\nCS-212,No time,2026-11-13,,,\n";
+    await importQalamCsv(userId, "deadlines", csv, "Asia/Karachi");
+    await importQalamCsv(userId, "deadlines", csv, "Asia/Karachi");
+    const rows = await db.assignment.findMany({ where: { userId }, orderBy: { dueAt: "asc" } });
+    expect(rows).toHaveLength(2);
+    expect(rows[0].dueAt?.toISOString()).toBe("2026-11-12T18:59:00.000Z");
+    expect(rows[1].dueAt?.toISOString()).toBe("2026-11-13T18:59:00.000Z");
+    expect(rows.every((a) => a.universityStatus === "UNKNOWN")).toBe(true);
+  });
+
   it("imports, reports bad rows, and re-imports without duplicates", async () => {
     const userId = await makeUser("qalam");
     const csv = "course,date,status,sessions\nCS-212 Data Structures,2026-10-05,PRESENT,1\nCS-212 Data Structures,2026-10-07,ABSENT,1\nCS-212 Data Structures,bad-date,PRESENT,1\n";

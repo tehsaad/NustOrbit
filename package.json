@@ -14,7 +14,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:status": "prisma migrate status",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "admin:invite": "tsx scripts/admin-invite.mts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

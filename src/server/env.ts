@@ -9,7 +9,6 @@ const schema = z.object({
   ORBIT_VAULT_KEY_PREVIOUS: z.string().optional(),
   ORBIT_VAULT_KEY_VERSION: z.coerce.number().int().positive().default(1),
   CRON_SECRET: z.string().min(32).optional(),
-  SETUP_TOKEN: z.string().min(16).optional(),
   ORBIT_TIMEZONE: z.string().default("Asia/Karachi"),
   SESSION_IDLE_DAYS: z.coerce.number().positive().default(14),
   SESSION_ABSOLUTE_DAYS: z.coerce.number().positive().default(60),

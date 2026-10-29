@@ -7,6 +7,7 @@ import { getOverview } from "@/server/queries/overview";
 import { db } from "@/server/db";
 import { readInboxSummary } from "@/server/integrations/providers/google";
 import { describeError } from "@/server/integrations/errors";
+import { googleConfigured } from "@/server/env";
 import { SectionCard, Muted } from "@/components/section-card";
 import { ConnectPrompt } from "@/components/connect-prompt";
 import { SourceBadge, SuggestedBadge } from "@/components/source-badge";
@@ -228,7 +229,15 @@ export default async function OverviewPage() {
           ) : gmail?.status === "NEEDS_REAUTH" ? (
             <ConnectPrompt title="Gmail needs reconnecting" body="Google access expired or was revoked." cta="Reconnect" />
           ) : (
-            <ConnectPrompt title="Gmail not connected" body="Connect Gmail to see unread counts and suggested academic deadlines." />
+            googleConfigured() ? (
+              <ConnectPrompt title="Gmail not connected" body="Connect Gmail to see unread counts and suggested academic deadlines." />
+            ) : (
+              <ConnectPrompt
+                title="Gmail not available yet"
+                body="Google sign-in isn't configured on this deployment, so Gmail can't be connected. See docs/integrations.md."
+                cta="View integrations"
+              />
+            )
           )}
         </SectionCard>
 

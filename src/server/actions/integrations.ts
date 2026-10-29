@@ -96,7 +96,7 @@ export async function importLmsIcsFile(_: ActionResult, fd: FormData): Promise<A
 
 export async function importQalam(_: ActionResult, fd: FormData): Promise<ActionResult> {
   const user = await requireUser();
-  const kind = z.enum(["marks", "attendance", "timetable", "results"]).safeParse(fd.get("kind"));
+  const kind = z.enum(["marks", "attendance", "timetable", "results", "deadlines"]).safeParse(fd.get("kind"));
   if (!kind.success) return { ok: false, error: "Choose what you are importing." };
   const text = await readUpload(fd);
   if (typeof text !== "string") return text;

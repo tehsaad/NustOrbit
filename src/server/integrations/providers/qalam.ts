@@ -11,7 +11,7 @@ import { parseHm, zonedWallTime } from "@/domain/time";
  * from their own Qalam pages. Imported rows are labelled IMPORT, keep a stable
  * externalId (hash of their natural key) and re-imports update instead of duplicating.
  */
-export type QalamImportKind = "marks" | "attendance" | "timetable" | "results";
+export type QalamImportKind = "marks" | "attendance" | "timetable" | "results" | "deadlines";
 
 export const QALAM_TEMPLATES: Record<QalamImportKind, { columns: string[]; example: string; help: string }> = {
   marks: {
@@ -20,14 +20,19 @@ export const QALAM_TEMPLATES: Record<QalamImportKind, { columns: string[]; examp
     help: "One row per assessment. Weight is the % of the course total (leave blank if unknown). Class average only if Qalam shows it.",
   },
   attendance: {
-    columns: ["course", "date", "status", "sessions"],
-    example: "CS-212 Data Structures,2026-10-05,PRESENT,1",
-    help: "Status is PRESENT, ABSENT, LEAVE or LATE. Date as YYYY-MM-DD. Sessions = contact hours the entry counts for.",
+    columns: ["course", "date", "time", "status", "sessions"],
+    example: "CS-212 Data Structures,2026-10-05,09:00,PRESENT,1",
+    help: "Status is PRESENT, ABSENT, LEAVE or LATE. Date as YYYY-MM-DD. Time (HH:mm) is optional but tells apart two classes on the same day. Sessions = contact hours the entry counts for.",
   },
   timetable: {
     columns: ["course", "day", "start", "end", "room", "instructor", "kind"],
     example: "CS-212 Data Structures,Monday,09:00,09:50,CR-12,Dr. Example,LECTURE",
     help: "Day as Monday–Sunday. Times in 24h HH:mm local time.",
+  },
+  deadlines: {
+    columns: ["course", "title", "due", "max", "weight", "url"],
+    example: "CS-212 Data Structures,Assignment 2,2026-11-12 23:59,10,5,",
+    help: "Due as YYYY-MM-DD HH:mm (or YYYY-MM-DD for 23:59) in your timezone. Submission status stays Unknown: a file can't confirm a submission.",
   },
   results: {
     columns: ["term", "course", "credit_hours", "grade", "grade_points"],
@@ -63,6 +68,8 @@ export async function importQalamCsv(userId: string, kind: QalamImportKind, text
   const report: ImportReport = { imported: 0, skipped: [] };
   const courses = new Map<string, string>();
   const now = new Date();
+  // Rows without a time that share course + date are told apart by their order in the file.
+  const sameDaySeen = new Map<string, number>();
   for (const [i, r] of rows.entries()) {
     const rowNo = i + 2;
     try {
@@ -90,9 +97,13 @@ export async function importQalamCsv(userId: string, kind: QalamImportKind, text
         if (!["PRESENT", "ABSENT", "LEAVE", "LATE"].includes(status)) throw new Error("Status must be PRESENT/ABSENT/LEAVE/LATE");
         const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(r.date ?? "");
         if (!m) throw new Error("Date must be YYYY-MM-DD");
-        const date = zonedWallTime({ y: +m[1], m: +m[2], d: +m[3] }, 12 * 60, tz);
+        const date = zonedWallTime({ y: +m[1], m: +m[2], d: +m[3] }, r.time ? parseHm(r.time)! : 12 * 60, tz);
         const sessions = Math.max(1, Math.min(6, num(r.sessions) ?? 1));
-        const externalId = key("att", r.course, r.date, r.sessions_index ?? "");
+        if (r.time && parseHm(r.time) == null) throw new Error("Time must be HH:mm");
+        const dayKey = `${r.course.toLowerCase()}|${r.date}`;
+        const ordinal = r.time ? r.time : `#${(sameDaySeen.get(dayKey) ?? 0) + 1}`;
+        if (!r.time) sameDaySeen.set(dayKey, (sameDaySeen.get(dayKey) ?? 0) + 1);
+        const externalId = key("att", r.course, r.date, ordinal);
         const data = { courseId, date, status: status as "PRESENT", sessions, syncedAt: now };
         await db.attendanceRecord.upsert({ where: { userId_source_externalId: { userId, source: "IMPORT", externalId } }, create: { userId, source: "IMPORT", externalId, ...data }, update: data });
       } else if (kind === "timetable") {
@@ -102,6 +113,17 @@ export async function importQalamCsv(userId: string, kind: QalamImportKind, text
         const externalId = key("tt", r.course, day, r.start);
         const data = { courseId, title: r.course, dayOfWeek: day, startTime: r.start, endTime: r.end, timezone: tz, room: r.room || null, instructor: r.instructor || null, kind: (r.kind || "LECTURE").toUpperCase(), syncedAt: now };
         await db.timetableEntry.upsert({ where: { userId_source_externalId: { userId, source: "IMPORT", externalId } }, create: { userId, source: "IMPORT", externalId, ...data }, update: data });
+      } else if (kind === "deadlines") {
+        const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}:\d{2}))?$/.exec(r.due ?? "");
+        if (!r.title || !m) throw new Error("Needs title and due as YYYY-MM-DD HH:mm");
+        const minutes = parseHm(m[4] ?? "23:59");
+        if (minutes == null) throw new Error("Invalid due time");
+        const dueAt = zonedWallTime({ y: +m[1], m: +m[2], d: +m[3] }, minutes, tz);
+        const externalId = key("due", r.course, r.title);
+        const url = r.url && /^https:\/\//.test(r.url) ? r.url : null;
+        const data = { courseId, title: r.title, dueAt, maxMarks: num(r.max), weightPct: num(r.weight), url, syncedAt: now };
+        // universityStatus is left at its default (UNKNOWN) and never set from a file.
+        await db.assignment.upsert({ where: { userId_source_externalId: { userId, source: "IMPORT", externalId } }, create: { userId, source: "IMPORT", externalId, ...data }, update: data });
       } else {
         const credits = num(r.credit_hours);
         if (credits != null) await db.course.update({ where: { id: courseId }, data: { creditHours: credits } });
