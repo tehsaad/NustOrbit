@@ -1,0 +1,708 @@
+// Orbit data model.
+// Every user-owned table carries `userId` and is queried through the
+// authenticated user's id only (see src/server/repo/*).
+// `source` + `externalId` give each imported row a stable provider identity
+// so repeated syncs upsert instead of duplicating.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── Auth (Better Auth) ─────────────────────────
+
+model User {
+  id               String    @id
+  name             String
+  email            String    @unique
+  emailVerified    Boolean   @default(false)
+  image            String?
+  twoFactorEnabled Boolean?  @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  sessions      Session[]
+  accounts      Account[]
+  twoFactors    TwoFactor[]
+  preference    UserPreference?
+  courses       Course[]
+  assessments   Assessment[]
+  grades        Grade[]
+  assignments   Assignment[]
+  submissions   Submission[]
+  timetable     TimetableEntry[]
+  classSessions ClassSession[]
+  attendance    AttendanceRecord[]
+  events        CalendarEvent[]
+  tasks         Task[]
+  notes         Note[]
+  reminders     Reminder[]
+  deliveries    NotificationDelivery[]
+  pushSubs      PushSubscription[]
+  connections   IntegrationConnection[]
+  oauthStates   OAuthState[]
+  syncRuns      SyncRun[]
+  auditEvents   AuditEvent[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model RateLimit {
+  id          String @id
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("rateLimit")
+}
+
+model TwoFactor {
+  id          String @id
+  secret      String
+  backupCodes String
+  verified                Boolean?  @default(true)
+  failedVerificationCount Int?      @default(0)
+  lockedUntil             DateTime?
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([secret])
+  @@map("twoFactor")
+}
+
+// ───────────────────────── Shared enums ─────────────────────────
+
+/// Where a record came from. MANUAL = typed by the user in Orbit.
+enum DataSource {
+  MANUAL
+  LMS
+  QALAM
+  GOOGLE_CALENDAR
+  GMAIL
+  GOOGLE_TASKS
+  IMPORT
+  ORBIT
+}
+
+// ───────────────────────── Preferences ─────────────────────────
+
+model UserPreference {
+  userId                 String   @id
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timezone               String   @default("Asia/Karachi")
+  /// Minimum attendance percentage. Null until the student configures it from a verified policy.
+  attendanceThresholdPct Float?
+  attendancePolicyNote   String?
+  /// How LATE marks count toward attendance: "present" | "absent".
+  attendanceLateAs       String   @default("present")
+  /// How LEAVE marks count: "absent" | "present" | "excluded".
+  attendanceLeaveAs      String   @default("absent")
+  /// Optional target course percentage used by the marks planner.
+  defaultTargetPct       Float?
+  weekStartsOn           Int      @default(1)
+  notifyPush             Boolean  @default(true)
+  notifyEmail            Boolean  @default(false)
+  defaultReminderMinutes Int      @default(60)
+  updatedAt              DateTime @updatedAt
+}
+
+// ───────────────────────── Academics ─────────────────────────
+
+model Course {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code        String?
+  name        String
+  instructor  String?
+  creditHours Float?
+  term        String?
+  color       String?
+  url         String?
+  /// Optional per-course attendance threshold override (percentage).
+  attendanceThresholdPct Float?
+  targetPct   Float?
+  archived    Boolean    @default(false)
+  source      DataSource @default(MANUAL)
+  externalId  String?
+  syncedAt    DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  assessments Assessment[]
+  grades      Grade[]
+  assignments Assignment[]
+  timetable   TimetableEntry[]
+  sessions    ClassSession[]
+  attendance  AttendanceRecord[]
+  events      CalendarEvent[]
+  tasks       Task[]
+  notes       Note[]
+
+  @@unique([userId, source, externalId])
+  @@index([userId, archived])
+}
+
+enum AssessmentCategory {
+  QUIZ
+  ASSIGNMENT
+  MIDTERM
+  FINAL
+  LAB
+  PROJECT
+  PRESENTATION
+  OTHER
+}
+
+/// A single marked component (quiz, assignment, OHT, final...).
+model Assessment {
+  id              String             @id @default(cuid())
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId        String
+  course          Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title           String
+  category        AssessmentCategory @default(OTHER)
+  obtainedMarks   Float?
+  maxMarks        Float
+  /// Contribution of this assessment to the course total, in percent (e.g. 10 = 10%).
+  weightPct       Float?
+  classAverage    Float?
+  classAverageSrc DataSource?
+  classHigh       Float?
+  heldAt          DateTime?
+  source          DataSource         @default(MANUAL)
+  externalId      String?
+  syncedAt        DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@unique([userId, source, externalId])
+  @@index([userId, courseId])
+}
+
+/// Authoritative course-level grade (only from a provider or a transcript import).
+model Grade {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId    String
+  course      Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  term        String?
+  letter      String?
+  gradePoints Float?
+  percentage  Float?
+  source      DataSource @default(MANUAL)
+  externalId  String?
+  syncedAt    DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([userId, source, externalId])
+  @@index([userId, courseId])
+}
+
+enum UniversityStatus {
+  UNKNOWN
+  NOT_SUBMITTED
+  SUBMITTED
+  GRADED
+}
+
+enum PersonalStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+model Assignment {
+  id               String           @id @default(cuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId         String?
+  course           Course?          @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  title            String
+  description      String?
+  dueAt            DateTime?
+  maxMarks         Float?
+  weightPct        Float?
+  url              String?
+  /// Status as reported by a university source. Never set to SUBMITTED by the user.
+  universityStatus UniversityStatus @default(UNKNOWN)
+  /// Status the student maintains for their own planning.
+  personalStatus   PersonalStatus   @default(TODO)
+  obtainedMarks    Float?
+  feedback         String?
+  notes            String?
+  checklist        Json?
+  /// True when extracted heuristically (e.g. from email) and not yet confirmed.
+  suggested        Boolean          @default(false)
+  source           DataSource       @default(MANUAL)
+  externalId       String?
+  syncedAt         DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  submissions Submission[]
+  tasks       Task[]
+  notesLinked Note[]
+
+  @@unique([userId, source, externalId])
+  @@index([userId, dueAt])
+}
+
+model Submission {
+  id           String           @id @default(cuid())
+  userId       String
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignmentId String
+  assignment   Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  status       UniversityStatus
+  submittedAt  DateTime?
+  grade        Float?
+  feedback     String?
+  source       DataSource
+  externalId   String?
+  syncedAt     DateTime?
+  createdAt    DateTime         @default(now())
+
+  @@unique([userId, source, externalId])
+  @@index([assignmentId])
+}
+
+// ───────────────────────── Timetable & attendance ─────────────────────────
+
+/// A recurring weekly class slot.
+model TimetableEntry {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId   String?
+  course     Course?    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title      String
+  kind       String     @default("LECTURE")
+  /// 0 = Sunday … 6 = Saturday
+  dayOfWeek  Int
+  /// Local wall-clock "HH:mm" in `timezone`.
+  startTime  String
+  endTime    String
+  timezone   String     @default("Asia/Karachi")
+  room       String?
+  campus     String?
+  instructor String?
+  validFrom  DateTime?
+  validUntil DateTime?
+  source     DataSource @default(MANUAL)
+  externalId String?
+  syncedAt   DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  sessions ClassSession[]
+
+  @@unique([userId, source, externalId])
+  @@index([userId, dayOfWeek])
+}
+
+enum ClassSessionStatus {
+  SCHEDULED
+  CANCELLED
+  RESCHEDULED
+  HOLIDAY
+}
+
+/// A concrete occurrence override (cancellation, makeup class, holiday).
+model ClassSession {
+  id               String             @id @default(cuid())
+  userId           String
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timetableEntryId String?
+  timetableEntry   TimetableEntry?    @relation(fields: [timetableEntryId], references: [id], onDelete: Cascade)
+  courseId         String?
+  course           Course?            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  startsAt         DateTime
+  endsAt           DateTime
+  status           ClassSessionStatus @default(SCHEDULED)
+  note             String?
+  source           DataSource         @default(MANUAL)
+  createdAt        DateTime           @default(now())
+
+  attendance AttendanceRecord[]
+
+  @@index([userId, startsAt])
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LEAVE
+  LATE
+}
+
+model AttendanceRecord {
+  id             String           @id @default(cuid())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId       String
+  course         Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  classSessionId String?
+  classSession   ClassSession?    @relation(fields: [classSessionId], references: [id], onDelete: SetNull)
+  date           DateTime
+  status         AttendanceStatus
+  /// Contact hours/sessions this record represents (a 3-hour lab may count as several).
+  sessions       Int              @default(1)
+  note           String?
+  source         DataSource       @default(MANUAL)
+  externalId     String?
+  syncedAt       DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([userId, source, externalId])
+  @@index([userId, courseId, date])
+}
+
+// ───────────────────────── Calendar, tasks, notes ─────────────────────────
+
+enum EventKind {
+  CLASS
+  EXAM
+  QUIZ
+  DEADLINE
+  STUDY
+  PERSONAL
+  OTHER
+}
+
+enum SyncStatus {
+  LOCAL_ONLY
+  SYNCED
+  PENDING_PUSH
+  CONFLICT
+  ERROR
+}
+
+model CalendarEvent {
+  id                 String     @id @default(cuid())
+  userId             String
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId           String?
+  course             Course?    @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  title              String
+  description        String?
+  location           String?
+  startsAt           DateTime
+  endsAt             DateTime
+  allDay             Boolean    @default(false)
+  kind               EventKind  @default(OTHER)
+  /// Externally owned events are read-only in Orbit.
+  readOnly           Boolean    @default(false)
+  suggested          Boolean    @default(false)
+  url                String?
+  source             DataSource @default(ORBIT)
+  externalId         String?
+  externalCalendarId String?
+  etag               String?
+  syncStatus         SyncStatus @default(LOCAL_ONLY)
+  syncedAt           DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  notes Note[]
+
+  @@unique([userId, source, externalId])
+  @@index([userId, startsAt])
+}
+
+enum TaskKind {
+  READING
+  STUDY
+  REVISION
+  COURSEWORK
+  PERSONAL
+  OTHER
+}
+
+model Task {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId     String?
+  course       Course?        @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  assignmentId String?
+  assignment   Assignment?    @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  title        String
+  notes        String?
+  kind         TaskKind       @default(OTHER)
+  priority     Int            @default(2)
+  status       PersonalStatus @default(TODO)
+  dueAt        DateTime?
+  completedAt  DateTime?
+  source       DataSource     @default(ORBIT)
+  externalId   String?
+  syncedAt     DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([userId, source, externalId])
+  @@index([userId, status, dueAt])
+}
+
+model Note {
+  id              String         @id @default(cuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId        String?
+  course          Course?        @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  assignmentId    String?
+  assignment      Assignment?    @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  calendarEventId String?
+  calendarEvent   CalendarEvent? @relation(fields: [calendarEventId], references: [id], onDelete: SetNull)
+  title           String
+  content         String         @default("")
+  folder          String?
+  tags            String[]       @default([])
+  pinned          Boolean        @default(false)
+  favorite        Boolean        @default(false)
+  archived        Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([userId, archived, pinned])
+}
+
+// ───────────────────────── Reminders & notifications ─────────────────────────
+
+enum ReminderRecurrence {
+  NONE
+  DAILY
+  WEEKDAYS
+  WEEKLY
+}
+
+enum ReminderStatus {
+  ACTIVE
+  PAUSED
+  DONE
+}
+
+model Reminder {
+  id         String             @id @default(cuid())
+  userId     String
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String
+  body       String?
+  /// Next time this reminder should fire (UTC).
+  remindAt   DateTime
+  recurrence ReminderRecurrence @default(NONE)
+  timezone   String             @default("Asia/Karachi")
+  channels   String[]           @default(["PUSH"])
+  targetType String?
+  targetId   String?
+  status     ReminderStatus     @default(ACTIVE)
+  lastFiredAt DateTime?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  deliveries NotificationDelivery[]
+
+  @@index([status, remindAt])
+  @@index([userId])
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model NotificationDelivery {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reminderId   String
+  reminder     Reminder       @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+  channel      String
+  scheduledFor DateTime
+  status       DeliveryStatus @default(PENDING)
+  attempts     Int            @default(0)
+  lastError    String?
+  sentAt       DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  /// Idempotency: one delivery per reminder occurrence per channel.
+  @@unique([reminderId, scheduledFor, channel])
+  @@index([userId, createdAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ───────────────────────── Integrations ─────────────────────────
+
+enum ConnectionStatus {
+  DISCONNECTED
+  CONNECTED
+  NEEDS_REAUTH
+  ERROR
+  PAUSED
+}
+
+model IntegrationConnection {
+  id             String           @id @default(cuid())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       String
+  status         ConnectionStatus @default(DISCONNECTED)
+  accountLabel   String?
+  grantedScopes  String[]         @default([])
+  config         Json?
+  lastSyncAt     DateTime?
+  lastSuccessAt  DateTime?
+  lastError      String?
+  /// Simple lease used to stop two syncs of the same connection running at once.
+  syncLockedUntil DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  credentials EncryptedCredential[]
+  syncRuns    SyncRun[]
+
+  @@unique([userId, provider])
+}
+
+/// AES-256-GCM encrypted secret. Plaintext never leaves the server.
+model EncryptedCredential {
+  id           String                @id @default(cuid())
+  connectionId String
+  connection   IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  kind         String
+  ciphertext   String
+  iv           String
+  authTag      String
+  keyVersion   Int                   @default(1)
+  expiresAt    DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@unique([connectionId, kind])
+}
+
+/// Pending OAuth authorization (state + PKCE verifier), single-use and short-lived.
+model OAuthState {
+  id                 String   @id @default(cuid())
+  stateHash          String   @unique
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider           String
+  codeVerifierCipher String
+  redirectUri        String
+  scopes             String[]
+  expiresAt          DateTime
+  createdAt          DateTime @default(now())
+}
+
+enum SyncRunStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+  SKIPPED
+}
+
+model SyncRun {
+  id           String                @id @default(cuid())
+  userId       String
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectionId String
+  connection   IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  provider     String
+  trigger      String
+  status       SyncRunStatus         @default(RUNNING)
+  created      Int                   @default(0)
+  updated      Int                   @default(0)
+  error        String?
+  startedAt    DateTime              @default(now())
+  finishedAt   DateTime?
+
+  @@index([connectionId, startedAt])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  targetType String?
+  targetId   String?
+  ip         String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
