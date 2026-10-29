@@ -21,7 +21,9 @@ Stated plainly so nothing is mistaken for a working live integration.
 ## Verification status
 
 - Verified live in production: health/DB, generic sign-in errors, cross-origin rejection, sign-up disabled, sign-in rate limiting (429), Argon2 hashing on Vercel, production migration guard.
-- Verified on a local production build with a disposable database (Playwright): setup, sign-in, TOTP enable/verify/disable, every module page, data isolation, session revocation, mobile navigation. No production account existed during the build, so your first sign-in is the first live authenticated check.
+- Verified on a local production build with a disposable database (Playwright): one-time claim link (expiry, replay, CLI refusal), sign-in, TOTP enable/verify/disable, every module page, data isolation, session revocation, mobile navigation and no horizontal overflow.
+- Verified live: no secret values in production client bundles; scheduler secret accepted by production (`Reminder dispatch` run returned `{"due":0,…}`).
+- Not yet verified live: authenticated pages, because no production account exists until you open your claim link.
 
 ## Product
 
