@@ -12,6 +12,7 @@ const schema = z.object({
   ORBIT_TIMEZONE: z.string().default("Asia/Karachi"),
   SESSION_IDLE_DAYS: z.coerce.number().positive().default(14),
   SESSION_ABSOLUTE_DAYS: z.coerce.number().positive().default(60),
+  LMS_LEGACY_TLS: z.enum(["0", "1"]).optional(),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   VAPID_PUBLIC_KEY: z.string().optional(),

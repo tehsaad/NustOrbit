@@ -18,6 +18,8 @@ All integrations are managed at **/integrations**. Each card shows capabilities,
 4. Optional: if the LMS shows **Preferences → Security keys** with a *Moodle mobile web service* key, use **Web-service token** to also import submission status and grades.
 5. No link available? Export an `.ics` file and use **Import .ics**.
 
+**TLS note:** NUST's LMS server needs legacy TLS renegotiation, which Node.js refuses by default. Pasted links therefore fail with an "outdated TLS" message unless `LMS_LEGACY_TLS=1` is set in Vercel (it applies only to the LMS host; see integration-assessment.md for the risk). File import is unaffected.
+
 Allowed hosts are set by `LMS_ALLOWED_HOSTS` (default `lms.nust.edu.pk`). Sync runs daily via Vercel Cron and on demand with **Sync now**.
 
 Mapping: course short names (`CATEGORIES`) become courses; "… is due" events become assignments with university status **Unknown** (a calendar can't prove submission); quizzes, exams and other events become read-only calendar events.

@@ -65,6 +65,21 @@ describe("LMS import", () => {
   });
 });
 
+describe("LMS TLS compatibility", () => {
+  it("explains the legacy-renegotiation refusal instead of reporting an outage", async () => {
+    const userId = await makeUser("tls");
+    const conn = await db.integrationConnection.create({ data: { userId, provider: "lms", status: "CONNECTED" } });
+    await putCredential(conn.id, "ical_url", "https://lms.example.edu/calendar/export_execute.php?authtoken=x");
+    const err = Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("unsafe legacy renegotiation disabled"), { code: "ERR_SSL_UNSAFE_LEGACY_RENEGOTIATION_DISABLED" }) });
+    vi.stubGlobal("fetch", vi.fn(async () => { throw err; }));
+    const r = await runSync(conn, "manual", syncLms);
+    expect(r.status).toBe("FAILED");
+    const after = await db.integrationConnection.findUniqueOrThrow({ where: { id: conn.id } });
+    expect(after.lastError).toMatch(/outdated TLS/);
+    expect(after.status).toBe("ERROR");
+  });
+});
+
 describe("runSync bookkeeping", () => {
   it("prevents concurrent duplicate runs with a lease", async () => {
     const userId = await makeUser("lease");

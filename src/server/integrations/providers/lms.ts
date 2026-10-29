@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/server/db";
 import { parseIcs, type ParsedEvent } from "@/domain/ics";
 import { getCredential } from "../credentials";
-import { fetchAllowedText } from "../safe-fetch";
+import { fetchAllowedText, LEGACY_TLS_MESSAGE, legacyTlsAllowed, legacyTlsRequest } from "../safe-fetch";
 import { ProviderAuthError, ProviderConfigError, ProviderUnavailableError } from "../errors";
 import type { SyncCounts } from "../sync";
 import type { IntegrationConnection } from "@/generated/prisma/client";
@@ -96,14 +96,30 @@ export class MoodleWebServiceProvider implements LmsProvider {
   private async call<T>(wsfunction: string, params: Record<string, string | number> = {}): Promise<T> {
     const body = new URLSearchParams({ wstoken: this.token, wsfunction, moodlewsrestformat: "json" });
     for (const [k, v] of Object.entries(params)) body.set(k, String(v));
-    let res: Response;
+    const endpoint = new URL(`${this.baseUrl}/webservice/rest/server.php`);
+    let status: number;
+    let text: string;
     try {
-      res = await fetch(`${this.baseUrl}/webservice/rest/server.php`, { method: "POST", body, redirect: "manual", signal: AbortSignal.timeout(15_000) });
-    } catch {
+      if (legacyTlsAllowed()) {
+        const r = await legacyTlsRequest(endpoint, { method: "POST", body: body.toString(), headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+        status = r.status;
+        text = r.text;
+      } else {
+        const res = await fetch(endpoint, { method: "POST", body, redirect: "manual", signal: AbortSignal.timeout(15_000) });
+        status = res.status;
+        text = await res.text();
+      }
+    } catch (e) {
+      if (/unsafe legacy renegotiation/i.test(String((e as { cause?: Error })?.cause?.message ?? (e as Error)?.message))) throw new ProviderConfigError(LEGACY_TLS_MESSAGE);
       throw new ProviderUnavailableError("The LMS did not respond.");
     }
-    if (!res.ok) throw new ProviderUnavailableError(`The LMS returned HTTP ${res.status}.`);
-    const json = (await res.json()) as T & MoodleError;
+    if (status < 200 || status >= 300) throw new ProviderUnavailableError(`The LMS returned HTTP ${status}.`);
+    let json: T & MoodleError;
+    try {
+      json = JSON.parse(text) as T & MoodleError;
+    } catch {
+      throw new ProviderUnavailableError("The LMS returned an unexpected response.");
+    }
     if (json && typeof json === "object" && "exception" in json && json.exception) {
       if (json.errorcode === "invalidtoken" || json.errorcode === "accessexception") throw new ProviderAuthError("The LMS rejected the token. Generate a new one and reconnect.");
       throw new ProviderUnavailableError(`LMS error: ${json.errorcode ?? "unknown"}`);

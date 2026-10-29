@@ -4,7 +4,7 @@ Stated plainly so nothing is mistaken for a working live integration.
 
 ## Integrations
 
-- **NUST LMS — unverified.** The LMS host didn't respond from the build environment, so the platform (presumed Moodle) and the availability of calendar export / web services at NUST are unconfirmed. The adapters are tested with synthetic Moodle data only. The first real check is pasting your calendar export URL. If Vercel can't reach the LMS, use `.ics` file import.
+- **NUST LMS — platform verified, data not.** NUST LMS is Moodle with web services enabled, verified from public endpoints. Its TLS setup is refused by Node.js unless `LMS_LEGACY_TLS=1` is set (host-scoped opt-in, off by default). Live sync has not been tested against real data because that needs your calendar link or token. `.ics` upload works without the flag.
 - **LMS calendar feed** has no submission status, grades, feedback, materials or announcements. Those need the web-service token path, if NUST permits it.
 - **Qalam**: no API, and automated access is blocked by a Cloudflare challenge. Import is via CSV you prepare yourself.
 - **Google Calendar / Gmail — not connected.** No OAuth client exists yet (`GOOGLE_CLIENT_ID/SECRET` unset). The code is covered by tests with mocked Google responses only. In *Testing* mode, refresh tokens expire every 7 days.

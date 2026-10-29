@@ -1,14 +1,15 @@
 # Integration assessment
 
-What each external system actually allows, as investigated on 2026-10-29. "Verified" means observed directly; "reported" means from public documentation or third-party sources.
+What each external system actually allows, as investigated on 2026-10-29 (LMS re-checked the same day with public, credential-free requests). "Verified" means observed directly; "reported" means from public documentation or third-party sources.
 
 ## NUST LMS — https://lms.nust.edu.pk/my/
 
 | Question | Finding |
 | --- | --- |
-| Platform | **Presumed Moodle, not verified.** The URL structure (`/my/`) matches Moodle. From this build environment the host did not respond at all (connection timed out), so the platform, version and enabled features could not be confirmed. Vercel's servers may or may not be able to reach it either. |
+| Platform | **Verified Moodle.** The public login page carries Moodle's `M.cfg` bootstrap and theme paths. The public `tool_mobile_get_public_config` endpoint returns site name "NUST Learning Management System", `enablewebservices: 1`, `enablemobilewebservice: 1`, `typeoflogin: 1` (app login by username/password) and no SSO identity providers. |
+| TLS | **Verified problem.** The server only completes a TLS 1.2 handshake if the client allows *legacy (unsafe) renegotiation*: it lacks RFC 5746 secure renegotiation. OpenSSL 3, Node.js 18+ and therefore Vercel functions refuse it by default (`ERR_SSL_UNSAFE_LEGACY_RENEGOTIATION_DISABLED`). Orbit's server can't fetch LMS links unless `LMS_LEGACY_TLS=1` is set. That flag enables `SSL_OP_LEGACY_SERVER_CONNECT` **only for requests to the allowlisted LMS host(s)**. Risk: an on-path attacker could exploit the old renegotiation flaw (CVE-2009-3555) to inject a request prefix. They can't read the response or the token. The setting is off by default and is your decision. |
 | Authentication | Interactive university login. Orbit does not and will not collect LMS passwords. |
-| Official API | Moodle ships REST web services (`/webservice/rest/server.php`). Whether NUST enables them for students, and whether students can create their own keys under *Preferences → Security keys*, is **unknown**. The standard token endpoint (`login/token.php`) takes a username and password, so Orbit does not use it. |
+| Official API | Web services and the mobile web service are **enabled** (verified). The standard way to get a token (`login/token.php`, as the Moodle app does) needs your username and password, so Orbit does not use it. Whether *Preferences → Security keys* shows a usable key is **unverified** (it requires signing in). |
 | Calendar export | Moodle's documented *Calendar → Export calendar → Get calendar URL* produces a per-user iCalendar link (`export_execute.php?userid=…&authtoken=…&preset_what=…&preset_time=…`). The `authtoken` is a credential for that calendar only. This is the most likely authorized path and is what Orbit implements first. |
 | Data available via calendar | Activity due dates, quiz open/close times, course events and course short names (`CATEGORIES`). **No** submission status, grades, feedback, materials or announcements. |
 | Data available via web services (if enabled) | Courses, assignments and due dates, submission status, grades and grade items, calendar action events. |
@@ -16,7 +17,7 @@ What each external system actually allows, as investigated on 2026-10-29. "Verif
 
 **Implemented**: `LmsProvider` interface with `MoodleCalendarFeedProvider` (URL or uploaded `.ics`) and `MoodleWebServiceProvider` (student-generated token). Both are adapters over the same idempotent import.
 
-**Needed to go live**: the student opens the LMS, generates their calendar export URL and pastes it on the Integrations page. Optionally, if *Security keys* exist, they paste the "Moodle mobile web service" key to get submissions and grades. Both paths are **unverified against NUST** until a real link is connected.
+**Needed to go live**: either upload an exported `.ics` file (works now, no TLS issue), or set `LMS_LEGACY_TLS=1` in Vercel and paste your calendar export URL. With the flag set, a credential-free request to the real LMS succeeds from Node (verified). A real calendar feed and a real web-service token have **not** been tested, because both need your LMS login.
 
 ## Qalam — https://qalam.nust.edu.pk/student/dashboard
 
