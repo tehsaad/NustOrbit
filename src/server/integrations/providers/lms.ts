@@ -46,6 +46,19 @@ export function lmsBaseUrl(): string {
   return `https://${lmsAllowedHosts()[0]}`;
 }
 
+/** Moodle returns names with HTML entities (e.g. "Calculus &amp; Geometry"); decode the common ones. */
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;|&#x27;/gi, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
+    .trim();
+}
+
 /** Runs `fn` over `items` with at most `limit` in flight, preserving order. */
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
@@ -188,7 +201,7 @@ export class MoodleWebServiceProvider implements LmsProvider {
 
   async listCourses(): Promise<LmsCourse[]> {
     const courses = await this.call<{ id: number; shortname: string; fullname: string }[]>("core_enrol_get_users_courses", { userid: await this.uid() });
-    return courses.map((c) => ({ externalId: String(c.id), code: c.shortname, name: c.fullname, url: `${this.baseUrl}/course/view.php?id=${c.id}` }));
+    return courses.map((c) => ({ externalId: String(c.id), code: decodeEntities(c.shortname), name: decodeEntities(c.fullname), url: `${this.baseUrl}/course/view.php?id=${c.id}` }));
   }
 
   async listDeadlines(): Promise<LmsDeadline[]> {
@@ -199,7 +212,7 @@ export class MoodleWebServiceProvider implements LmsProvider {
     );
     return r.events.map((e) => ({
       externalId: `ws-event-${e.id}`,
-      title: e.name,
+      title: decodeEntities(e.name),
       courseExternalId: e.course ? String(e.course.id) : undefined,
       startsAt: new Date(e.timestart * 1000),
       endsAt: new Date((e.timestart + (e.timeduration || 0)) * 1000),
@@ -238,7 +251,7 @@ export class MoodleWebServiceProvider implements LmsProvider {
       return {
         externalId: `ws-assign-${a.id}`,
         courseExternalId: String(c.id),
-        title: a.name,
+        title: decodeEntities(a.name),
         dueAt: a.duedate ? new Date(a.duedate * 1000) : null,
         url: `${this.baseUrl}/mod/assign/view.php?id=${a.cmid}`,
         maxMarks: a.grade > 0 ? a.grade : null,
@@ -274,7 +287,7 @@ export class MoodleWebServiceProvider implements LmsProvider {
           out.push({
             externalId: `ws-grade-${gi.id}`,
             courseExternalId: String(ug.courseid),
-            title: gi.itemname,
+            title: decodeEntities(gi.itemname),
             obtained: gi.graderaw,
             max: gi.grademax,
             weightPct: gi.weightraw != null ? Math.round(gi.weightraw * 10000) / 100 : null,

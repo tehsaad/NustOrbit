@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { db } from "@/server/db";
-import { exchangeMoodleToken, importLmsData, MoodleCalendarFeedProvider, syncLms, type LmsProvider } from "@/server/integrations/providers/lms";
+import { exchangeMoodleToken, importLmsData, MoodleCalendarFeedProvider, MoodleWebServiceProvider, syncLms, type LmsProvider } from "@/server/integrations/providers/lms";
 import { importQalamCsv } from "@/server/integrations/providers/qalam";
 import { runSync } from "@/server/integrations/sync";
 import { ProviderAuthError, ProviderUnavailableError } from "@/server/integrations/errors";
@@ -62,6 +62,28 @@ describe("LMS import", () => {
     const after = await db.integrationConnection.findUniqueOrThrow({ where: { id: conn.id } });
     expect(after.lastSuccessAt).not.toBeNull();
     expect(after.syncLockedUntil).toBeNull();
+  });
+});
+
+describe("Moodle web-service provider", () => {
+  it("decodes HTML entities in course names and fetches grades per course", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_u: string, init: RequestInit) => {
+      const fn = new URLSearchParams(String(init.body)).get("wsfunction")!;
+      calls.push(fn);
+      const data: Record<string, unknown> = {
+        core_webservice_get_site_info: { userid: 5 },
+        core_enrol_get_users_courses: [{ id: 42, shortname: "MATH-101", fullname: "Calculus &amp; Geometry" }],
+        gradereport_user_get_grade_items: { usergrades: [{ courseid: 42, gradeitems: [{ id: 7, itemname: "Quiz &#039;1&#039;", itemtype: "mod", graderaw: 8, grademax: 10, weightraw: 0.1 }] }] },
+      };
+      return new Response(JSON.stringify(data[fn] ?? {}), { status: 200 });
+    }));
+    const p = new MoodleWebServiceProvider("https://lms.example.edu", "tok");
+    const courses = await p.listCourses();
+    expect(courses[0].name).toBe("Calculus & Geometry");
+    const grades = await p.listGrades(["42"]);
+    expect(grades[0]).toMatchObject({ title: "Quiz '1'", obtained: 8, max: 10, weightPct: 10 });
+    expect(calls).toContain("gradereport_user_get_grade_items");
   });
 });
 
