@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, CircleDashed, Download, KeyRound, Link2, LogIn, RefreshCw, ShieldAlert, Unplug, Upload } from "lucide-react";
+import { CheckCircle2, CircleDashed, Download, HelpCircle, KeyRound, Link2, LogIn, RefreshCw, ShieldAlert, Unplug, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FormDialog, SelectField, SubmitButton, TextField, useFormAction } from "@/components/forms";
@@ -266,6 +266,11 @@ export function IntegrationCard({
                   </>
                 )}
               </FormDialog>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/integrations/qalam">
+                  <HelpCircle /> How to export from Qalam
+                </Link>
+              </Button>
               {connection ? <DisconnectButton provider="qalam" purgeLabel="Also delete all rows imported from files" /> : null}
             </>
           ) : def.category === "google" && def.methods.includes("oauth") && def.availability !== "planned" ? (

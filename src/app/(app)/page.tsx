@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { courseLabel, fmtDate, fmtDateTime, fmtTime } from "@/lib/format";
 import { getProvider } from "@/server/integrations/registry";
 import { cn } from "@/lib/utils";
+import { AcademicStanding } from "@/components/modules/academic-standing";
 
 export const metadata: Metadata = { title: "Overview" };
 
@@ -55,6 +56,12 @@ export default async function OverviewPage() {
         </div>
         <LiveClock tz={o.tz} />
       </div>
+
+      {hasAcademicData ? (
+        <Suspense fallback={<Skeleton className="h-40 rounded-xl" />}>
+          <AcademicStanding userId={user.id} now={now} />
+        </Suspense>
+      ) : null}
 
       {/* Status strip */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
