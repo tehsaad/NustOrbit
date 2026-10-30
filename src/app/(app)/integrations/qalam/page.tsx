@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { QALAM_TEMPLATES } from "@/server/integrations/providers/qalam";
 import { QALAM_BOOKMARKLET, QALAM_BOOKMARKLET_SOURCE } from "@/lib/qalam-bookmarklet";
 import { QalamExportHelper } from "./export-helper";
+import { AppPairing } from "./app-pairing";
 
 export const metadata: Metadata = { title: "Export from Qalam" };
 
@@ -29,7 +30,20 @@ export default async function QalamExportPage() {
         </p>
       </div>
 
-      <QalamExportHelper bookmarklet={QALAM_BOOKMARKLET} source={QALAM_BOOKMARKLET_SOURCE} />
+      <section className="mb-8 rounded-xl border bg-card p-4 shadow-xs">
+        <h2 className="text-sm font-semibold">Connect the app (recommended)</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          The Orbit Qalam app (in <code>mobile/</code>) logs into Qalam on your phone — where it gets through normally — reads your attendance and results, and sends them here
+          automatically. Create a one-time pairing code and enter it in the app with your Orbit URL.
+        </p>
+        <AppPairing />
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold">Or export a CSV from your browser (no app)</h2>
+        <p className="mb-3 mt-1 text-sm text-muted-foreground">Prefer not to install the app? Export a CSV from your logged-in Qalam tab and import it.</p>
+        <QalamExportHelper bookmarklet={QALAM_BOOKMARKLET} source={QALAM_BOOKMARKLET_SOURCE} />
+      </section>
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold">Then import it</h2>
