@@ -57,7 +57,7 @@ const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", 
 const key = (...parts: (string | number | undefined)[]) => "qalam-" + createHash("sha256").update(parts.join("|").toLowerCase()).digest("hex").slice(0, 32);
 const num = (v: string | undefined) => (v == null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
 
-export type ImportReport = { imported: number; skipped: { row: number; reason: string }[] };
+export type ImportReport = { imported: number; unchanged: number; skipped: { row: number; reason: string }[] };
 export type QalamRow = Record<string, string>;
 
 /**
@@ -113,7 +113,11 @@ async function courseFor(userId: string, label: string, cache: Map<string, strin
  * each row's `syncedAt` and drives the stale guard.
  */
 export async function importQalamRecords(userId: string, kind: QalamImportKind, rows: QalamRow[], tz: string, extractedAt: Date = new Date()): Promise<ImportReport> {
-  const report: ImportReport = { imported: 0, skipped: [] };
+  const report: ImportReport = { imported: 0, unchanged: 0, skipped: [] };
+  // Clamp to now: `extractedAt` comes from the client's clock for extension
+  // imports, and a fast clock must not stamp rows in the future (which would
+  // make every later import look stale).
+  const observedAt = extractedAt.getTime() > Date.now() ? new Date() : extractedAt;
   const courses = new Map<string, string>();
   // Rows without a time that share course + date are told apart by their order in the batch.
   const sameDaySeen = new Map<string, number>();
@@ -122,6 +126,7 @@ export async function importQalamRecords(userId: string, kind: QalamImportKind, 
     try {
       if (!r.course) throw new Error("Missing course");
       const courseId = await courseFor(userId, r.course, courses);
+      let wrote = true; // false when an existing newer row was kept (stale guard)
       if (kind === "marks") {
         const max = num(r.max);
         if (!r.assessment || !max || max <= 0) throw new Error("Needs assessment and max > 0");
@@ -135,9 +140,9 @@ export async function importQalamRecords(userId: string, kind: QalamImportKind, 
           weightPct: num(r.weight),
           classAverage: num(r.class_average),
           classAverageSrc: num(r.class_average) == null ? null : (QALAM_SOURCE as "IMPORT"),
-          syncedAt: extractedAt,
+          syncedAt: observedAt,
         };
-        await writeGuarded(db.assessment as unknown as SyncedDelegate, userId, key("marks", r.course, r.assessment), data, extractedAt);
+        wrote = await writeGuarded(db.assessment as unknown as SyncedDelegate, userId, key("marks", r.course, r.assessment), data, observedAt);
       } else if (kind === "attendance") {
         const status = (r.status ?? "").toUpperCase();
         if (!["PRESENT", "ABSENT", "LEAVE", "LATE"].includes(status)) throw new Error("Status must be PRESENT/ABSENT/LEAVE/LATE");
@@ -149,14 +154,14 @@ export async function importQalamRecords(userId: string, kind: QalamImportKind, 
         const dayKey = `${r.course.toLowerCase()}|${r.date}`;
         const ordinal = r.time ? r.time : `#${(sameDaySeen.get(dayKey) ?? 0) + 1}`;
         if (!r.time) sameDaySeen.set(dayKey, (sameDaySeen.get(dayKey) ?? 0) + 1);
-        const data = { courseId, date, status: status as "PRESENT", sessions, syncedAt: extractedAt };
-        await writeGuarded(db.attendanceRecord as unknown as SyncedDelegate, userId, key("att", r.course, r.date, ordinal), data, extractedAt);
+        const data = { courseId, date, status: status as "PRESENT", sessions, syncedAt: observedAt };
+        wrote = await writeGuarded(db.attendanceRecord as unknown as SyncedDelegate, userId, key("att", r.course, r.date, ordinal), data, observedAt);
       } else if (kind === "timetable") {
         const day = DAYS.indexOf((r.day ?? "").toLowerCase());
         if (day < 0) throw new Error("Day must be Monday–Sunday");
         if (parseHm(r.start ?? "") == null || parseHm(r.end ?? "") == null || parseHm(r.end)! <= parseHm(r.start)!) throw new Error("Invalid start/end");
-        const data = { courseId, title: r.course, dayOfWeek: day, startTime: r.start, endTime: r.end, timezone: tz, room: r.room || null, instructor: r.instructor || null, kind: (r.kind || "LECTURE").toUpperCase(), syncedAt: extractedAt };
-        await writeGuarded(db.timetableEntry as unknown as SyncedDelegate, userId, key("tt", r.course, day, r.start), data, extractedAt);
+        const data = { courseId, title: r.course, dayOfWeek: day, startTime: r.start, endTime: r.end, timezone: tz, room: r.room || null, instructor: r.instructor || null, kind: (r.kind || "LECTURE").toUpperCase(), syncedAt: observedAt };
+        wrote = await writeGuarded(db.timetableEntry as unknown as SyncedDelegate, userId, key("tt", r.course, day, r.start), data, observedAt);
       } else if (kind === "deadlines") {
         const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}:\d{2}))?$/.exec(r.due ?? "");
         if (!r.title || !m) throw new Error("Needs title and due as YYYY-MM-DD HH:mm");
@@ -164,16 +169,17 @@ export async function importQalamRecords(userId: string, kind: QalamImportKind, 
         if (minutes == null) throw new Error("Invalid due time");
         const dueAt = zonedWallTime({ y: +m[1], m: +m[2], d: +m[3] }, minutes, tz);
         const url = r.url && /^https:\/\//.test(r.url) ? r.url : null;
-        const data = { courseId, title: r.title, dueAt, maxMarks: num(r.max), weightPct: num(r.weight), url, syncedAt: extractedAt };
+        const data = { courseId, title: r.title, dueAt, maxMarks: num(r.max), weightPct: num(r.weight), url, syncedAt: observedAt };
         // universityStatus is left at its default (UNKNOWN) and never set from an import.
-        await writeGuarded(db.assignment as unknown as SyncedDelegate, userId, key("due", r.course, r.title), data, extractedAt);
+        wrote = await writeGuarded(db.assignment as unknown as SyncedDelegate, userId, key("due", r.course, r.title), data, observedAt);
       } else {
         const credits = num(r.credit_hours);
         if (credits != null) await db.course.update({ where: { id: courseId }, data: { creditHours: credits } });
-        const data = { courseId, term: r.term || null, letter: r.grade || null, gradePoints: num(r.grade_points), syncedAt: extractedAt };
-        await writeGuarded(db.grade as unknown as SyncedDelegate, userId, key("res", r.term, r.course), data, extractedAt);
+        const data = { courseId, term: r.term || null, letter: r.grade || null, gradePoints: num(r.grade_points), syncedAt: observedAt };
+        wrote = await writeGuarded(db.grade as unknown as SyncedDelegate, userId, key("res", r.term, r.course), data, observedAt);
       }
-      report.imported++;
+      if (wrote) report.imported++;
+      else report.unchanged++;
     } catch (e) {
       report.skipped.push({ row: rowNo, reason: e instanceof Error ? e.message : "Invalid row" });
     }

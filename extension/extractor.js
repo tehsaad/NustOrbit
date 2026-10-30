@@ -27,9 +27,7 @@
     course: ["course", "subject", "course code", "course title", "course name", "code"],
     assessment: ["assessment", "item", "activity", "component", "quiz", "exam", "name", "title"],
     category: ["category", "type", "kind", "assessment type"],
-    // TODO(calibrate): the student mentioned a column named "udu"; left here as a
-    // candidate for the obtained-marks column until real HTML confirms it.
-    obtained: ["obtained", "obtained marks", "marks obtained", "score", "secured", "achieved", "your marks", "udu"],
+    obtained: ["obtained", "obtained marks", "marks obtained", "score", "secured", "achieved", "your marks"],
     max: ["max", "max marks", "total", "total marks", "out of"],
     weight: ["weight", "weightage", "absolute weightage", "percentage", "wtg"],
     class_average: ["class average", "average", "avg", "class avg"],
@@ -62,8 +60,10 @@
     const h = norm(header);
     if (!h) return 0;
     for (const a of aliases) if (h === a) return 3;
-    for (const a of aliases) if (h.startsWith(a) || a.startsWith(h)) return 2;
-    for (const a of aliases) if (h.includes(a)) return 1;
+    // Fuzzy tiers only for aliases/headers of 3+ chars, so short codes ("ch",
+    // "gr", "to") and single-letter headers ("P"/"A") can't false-match.
+    for (const a of aliases) if (a.length >= 3 && h.length >= 3 && (h.startsWith(a) || a.startsWith(h))) return 2;
+    for (const a of aliases) if (a.length >= 3 && h.length >= 3 && h.includes(a)) return 1;
     return 0;
   }
 

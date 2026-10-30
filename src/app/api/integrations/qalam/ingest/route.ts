@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     return json({ error: "invalid body" }, 400);
   }
 
-  const conn = await db.integrationConnection.findUnique({ where: { id: verified.connectionId }, select: { lastSyncAt: true } });
+  const conn = await db.integrationConnection.findUnique({ where: { id: verified.connectionId }, select: { lastSyncAt: true, config: true } });
   if (conn?.lastSyncAt && Date.now() - conn.lastSyncAt.getTime() < MIN_INTERVAL_MS) {
     return json({ error: "too many requests", retryAfterMs: MIN_INTERVAL_MS }, 429);
   }
@@ -80,11 +80,11 @@ export async function POST(request: Request) {
         lastSyncAt: new Date(),
         lastSuccessAt: new Date(),
         lastError: null,
-        config: { lastImport: { kind: parsed.kind, at: new Date().toISOString(), imported: report.imported, skipped: report.skipped.length, via: "extension" } },
+        config: { ...((conn?.config as object) ?? {}), lastImport: { kind: parsed.kind, at: new Date().toISOString(), imported: report.imported, unchanged: report.unchanged, skipped: report.skipped.length, via: "extension" } },
       },
     });
-    await recordAudit({ userId: verified.userId, action: "integration.extension_ingest", targetType: "integration", targetId: "qalam", metadata: { kind: parsed.kind, imported: report.imported, skipped: report.skipped.length } });
-    return json({ ok: true, imported: report.imported, skipped: report.skipped.slice(0, 20) });
+    await recordAudit({ userId: verified.userId, action: "integration.extension_ingest", targetType: "integration", targetId: "qalam", metadata: { kind: parsed.kind, imported: report.imported, unchanged: report.unchanged, skipped: report.skipped.length } });
+    return json({ ok: true, imported: report.imported, unchanged: report.unchanged, skipped: report.skipped.slice(0, 20) });
   } catch (e) {
     const message = e instanceof Error ? e.message : "import failed";
     await db.integrationConnection.update({ where: { id: verified.connectionId }, data: { lastError: message } }).catch(() => {});

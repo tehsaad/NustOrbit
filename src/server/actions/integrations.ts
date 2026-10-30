@@ -141,7 +141,7 @@ export async function importQalam(_: ActionResult, fd: FormData): Promise<Action
   const conn = await connectionFor(user.id, "qalam");
   await db.integrationConnection.update({
     where: { id: conn.id },
-    data: { accountLabel: "CSV import", lastSuccessAt: new Date(), lastSyncAt: new Date(), config: { lastImport: { kind: kind.data, at: new Date().toISOString(), ...report, skipped: report.skipped.slice(0, 20) } } },
+    data: { accountLabel: "CSV import", lastSuccessAt: new Date(), lastSyncAt: new Date(), config: { ...((conn.config as object) ?? {}), lastImport: { kind: kind.data, at: new Date().toISOString(), ...report, skipped: report.skipped.slice(0, 20) } } },
   });
   await recordAudit({ userId: user.id, action: "integration.file_import", targetType: "integration", targetId: "qalam", metadata: { kind: kind.data, imported: report.imported, skipped: report.skipped.length } });
   revalidatePath("/", "layout");

@@ -52,7 +52,8 @@ describe("importQalamRecords stale guard + idempotency", () => {
     const T3 = new Date("2026-09-01T00:00:00Z");
 
     await importQalamRecords(userId, "marks", [marksRow], TZ, T2); // create, obtained 8
-    await importQalamRecords(userId, "marks", [{ ...marksRow, obtained: "9" }], TZ, T1); // older → ignored
+    const stale = await importQalamRecords(userId, "marks", [{ ...marksRow, obtained: "9" }], TZ, T1); // older → ignored
+    expect(stale).toMatchObject({ imported: 0, unchanged: 1 }); // reported as unchanged, not imported
     let a = await db.assessment.findFirstOrThrow({ where: { userId, source: "IMPORT" } });
     expect(a.obtainedMarks).toBe(8);
 
@@ -61,6 +62,16 @@ describe("importQalamRecords stale guard + idempotency", () => {
     expect(a.obtainedMarks).toBe(7);
 
     expect(await db.assessment.count({ where: { userId, source: "IMPORT" } })).toBe(1); // idempotent
+  });
+
+  it("clamps a future extractedAt so later real imports still apply", async () => {
+    const { userId } = await qalamConnection();
+    const future = new Date(Date.now() + 7 * 24 * 3600_000); // clock running a week fast
+    await importQalamRecords(userId, "marks", [marksRow], TZ, future); // clamped to now, not the future
+    const r = await importQalamRecords(userId, "marks", [{ ...marksRow, obtained: "5" }], TZ, new Date());
+    expect(r).toMatchObject({ imported: 1 }); // applied, not silently dropped as stale
+    const a = await db.assessment.findFirstOrThrow({ where: { userId, source: "IMPORT" } });
+    expect(a.obtainedMarks).toBe(5);
   });
 });
 

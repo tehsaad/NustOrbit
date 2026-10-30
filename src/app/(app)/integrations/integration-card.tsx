@@ -271,7 +271,7 @@ export function IntegrationCard({
                   <HelpCircle /> How to export from Qalam
                 </Link>
               </Button>
-              {connection ? <DisconnectButton provider="qalam" purgeLabel="Also delete all rows imported from files" /> : null}
+              {connection ? <DisconnectButton provider="qalam" purgeLabel="Also delete all Qalam data imported here (files or extension)" /> : null}
             </>
           ) : def.category === "google" && def.methods.includes("oauth") && def.availability !== "planned" ? (
             env.google ? (
