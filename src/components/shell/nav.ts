@@ -4,7 +4,6 @@ import {
   CheckSquare,
   ClipboardList,
   Clock,
-  GraduationCap,
   LayoutDashboard,
   Library,
   NotebookPen,
@@ -17,8 +16,7 @@ import {
 export type NavItem = { href: string; label: string; icon: LucideIcon; mobile?: boolean };
 
 export const NAV: NavItem[] = [
-  { href: "/", label: "Overview", icon: LayoutDashboard, mobile: true },
-  { href: "/academics", label: "Academics", icon: GraduationCap },
+  { href: "/", label: "Home", icon: LayoutDashboard, mobile: true },
   { href: "/courses", label: "Courses", icon: Library },
   { href: "/marks", label: "Marks", icon: BookOpen },
   { href: "/assignments", label: "Assignments", icon: ClipboardList, mobile: true },
