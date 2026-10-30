@@ -19,7 +19,7 @@ export interface LmsProvider {
   listCourses(): Promise<LmsCourse[]>;
   listDeadlines(): Promise<LmsDeadline[]>;
   listAssignments?(): Promise<LmsAssignment[]>;
-  listGrades?(): Promise<LmsGradeItem[]>;
+  listGrades?(courseExternalIds: string[]): Promise<LmsGradeItem[]>;
 }
 
 export type LmsCourse = { externalId: string; code?: string; name: string; url?: string };
@@ -236,23 +236,34 @@ export class MoodleWebServiceProvider implements LmsProvider {
     return out;
   }
 
-  async listGrades(): Promise<LmsGradeItem[]> {
-    const r = await this.call<{ usergrades: { courseid: number; gradeitems: { id: number; itemname: string | null; itemtype: string; graderaw: number | null; grademax: number; weightraw?: number | null }[] }[] }>(
-      "gradereport_user_get_grade_items",
-      { courseid: 0, userid: await this.uid() },
-    );
+  async listGrades(courseExternalIds: string[]): Promise<LmsGradeItem[]> {
+    // gradereport_user_get_grade_items requires a real course id — courseid:0 ("all
+    // courses") makes Moodle throw invalidrecordunknown, so query each course and
+    // skip any that refuses (some courses hide the grader report from students).
+    const uid = await this.uid();
     const out: LmsGradeItem[] = [];
-    for (const ug of r.usergrades ?? []) {
-      for (const gi of ug.gradeitems) {
-        if (gi.itemtype === "course" || !gi.itemname) continue;
-        out.push({
-          externalId: `ws-grade-${gi.id}`,
-          courseExternalId: String(ug.courseid),
-          title: gi.itemname,
-          obtained: gi.graderaw,
-          max: gi.grademax,
-          weightPct: gi.weightraw != null ? Math.round(gi.weightraw * 10000) / 100 : null,
-        });
+    for (const cid of courseExternalIds) {
+      const courseid = Number(cid);
+      if (!Number.isFinite(courseid)) continue;
+      let r: { usergrades?: { courseid: number; gradeitems: { id: number; itemname: string | null; itemtype: string; graderaw: number | null; grademax: number; weightraw?: number | null }[] }[] };
+      try {
+        r = await this.call("gradereport_user_get_grade_items", { courseid, userid: uid });
+      } catch (e) {
+        if (e instanceof ProviderAuthError) throw e;
+        continue;
+      }
+      for (const ug of r.usergrades ?? []) {
+        for (const gi of ug.gradeitems) {
+          if (gi.itemtype === "course" || !gi.itemname || !(gi.grademax > 0)) continue;
+          out.push({
+            externalId: `ws-grade-${gi.id}`,
+            courseExternalId: String(ug.courseid),
+            title: gi.itemname,
+            obtained: gi.graderaw,
+            max: gi.grademax,
+            weightPct: gi.weightraw != null ? Math.round(gi.weightraw * 10000) / 100 : null,
+          });
+        }
       }
     }
     return out;
@@ -265,6 +276,14 @@ export async function importLmsData(userId: string, provider: LmsProvider): Prom
   let updated = 0;
   const now = new Date();
   const courseIds = new Map<string, string>();
+  // Each section is independent: a failure in one (e.g. a Moodle function a
+  // course disables) becomes a warning (PARTIAL sync) instead of discarding the
+  // data that did load. Courses must succeed, since everything maps onto them.
+  const warnings: string[] = [];
+  const note = (what: string, e: unknown) => {
+    if (e instanceof ProviderAuthError) throw e;
+    warnings.push(`${what} could not be synced: ${e instanceof Error ? e.message : "unknown error"}`);
+  };
 
   for (const c of await provider.listCourses()) {
     const existing = await db.course.findUnique({ where: { userId_source_externalId: { userId, source: "LMS", externalId: c.externalId } } });
@@ -279,8 +298,10 @@ export async function importLmsData(userId: string, provider: LmsProvider): Prom
     else created++;
   }
 
+  const assignmentIds = new Set<string>();
+  try {
   const assignments = provider.listAssignments ? await provider.listAssignments() : [];
-  const assignmentIds = new Set(assignments.map((a) => a.externalId));
+  for (const a of assignments) assignmentIds.add(a.externalId);
   for (const a of assignments) {
     const data = {
       title: a.title,
@@ -307,7 +328,11 @@ export async function importLmsData(userId: string, provider: LmsProvider): Prom
       });
     }
   }
+  } catch (e) {
+    note("Assignments", e);
+  }
 
+  try {
   for (const d of await provider.listDeadlines()) {
     const courseId = d.courseExternalId ? (courseIds.get(d.courseExternalId) ?? null) : null;
     if (d.kind === "DEADLINE" && !assignmentIds.has(d.externalId)) {
@@ -345,21 +370,28 @@ export async function importLmsData(userId: string, provider: LmsProvider): Prom
       else created++;
     }
   }
+  } catch (e) {
+    note("Deadlines", e);
+  }
 
   if (provider.listGrades) {
-    for (const g of await provider.listGrades()) {
-      const courseId = courseIds.get(g.courseExternalId);
-      if (!courseId || !(g.max > 0)) continue;
-      const data = { courseId, title: g.title, obtainedMarks: g.obtained, maxMarks: g.max, weightPct: g.weightPct, syncedAt: now };
-      await db.assessment.upsert({
-        where: { userId_source_externalId: { userId, source: "LMS", externalId: g.externalId } },
-        create: { userId, source: "LMS", externalId: g.externalId, ...data },
-        update: data,
-      });
-      updated++;
+    try {
+      for (const g of await provider.listGrades([...courseIds.keys()])) {
+        const courseId = courseIds.get(g.courseExternalId);
+        if (!courseId || !(g.max > 0)) continue;
+        const data = { courseId, title: g.title, obtainedMarks: g.obtained, maxMarks: g.max, weightPct: g.weightPct, syncedAt: now };
+        await db.assessment.upsert({
+          where: { userId_source_externalId: { userId, source: "LMS", externalId: g.externalId } },
+          create: { userId, source: "LMS", externalId: g.externalId, ...data },
+          update: data,
+        });
+        updated++;
+      }
+    } catch (e) {
+      note("Grades", e);
     }
   }
-  return { created, updated };
+  return { created, updated, warnings: warnings.length ? warnings : undefined };
 }
 
 export async function lmsProviderFor(connection: IntegrationConnection): Promise<LmsProvider> {
