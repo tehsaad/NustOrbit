@@ -9,7 +9,7 @@ export type SyncCounts = { created: number; updated: number; warnings?: string[]
 export type SyncHandler = (connection: IntegrationConnection) => Promise<SyncCounts>;
 
 const LEASE_MS = 5 * 60_000;
-const RUN_TIMEOUT_MS = 60_000;
+const RUN_TIMEOUT_MS = 90_000;
 
 /**
  * Runs one sync for a connection with:

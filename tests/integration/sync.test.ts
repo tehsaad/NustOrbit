@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { db } from "@/server/db";
-import { exchangeMoodleToken, importLmsData, MoodleCalendarFeedProvider, syncLms } from "@/server/integrations/providers/lms";
+import { exchangeMoodleToken, importLmsData, MoodleCalendarFeedProvider, MoodleWebServiceProvider, syncLms, type LmsProvider } from "@/server/integrations/providers/lms";
 import { importQalamCsv } from "@/server/integrations/providers/qalam";
 import { runSync } from "@/server/integrations/sync";
 import { ProviderAuthError, ProviderUnavailableError } from "@/server/integrations/errors";
@@ -62,6 +62,67 @@ describe("LMS import", () => {
     const after = await db.integrationConnection.findUniqueOrThrow({ where: { id: conn.id } });
     expect(after.lastSuccessAt).not.toBeNull();
     expect(after.syncLockedUntil).toBeNull();
+  });
+});
+
+describe("Moodle web-service provider", () => {
+  it("decodes HTML entities in course names and fetches grades per course", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_u: string, init: RequestInit) => {
+      const fn = new URLSearchParams(String(init.body)).get("wsfunction")!;
+      calls.push(fn);
+      const data: Record<string, unknown> = {
+        core_webservice_get_site_info: { userid: 5 },
+        core_enrol_get_users_courses: [{ id: 42, shortname: "MATH-101", fullname: "Calculus &amp; Geometry" }],
+        gradereport_user_get_grade_items: { usergrades: [{ courseid: 42, gradeitems: [{ id: 7, itemname: "Quiz &#039;1&#039;", itemtype: "mod", graderaw: 8, grademax: 10, weightraw: 0.1 }] }] },
+      };
+      return new Response(JSON.stringify(data[fn] ?? {}), { status: 200 });
+    }));
+    const p = new MoodleWebServiceProvider("https://lms.example.edu", "tok");
+    const courses = await p.listCourses();
+    expect(courses[0].name).toBe("Calculus & Geometry");
+    const grades = await p.listGrades(["42"]);
+    expect(grades[0]).toMatchObject({ title: "Quiz '1'", obtained: 8, max: 10, weightPct: 10 });
+    expect(calls).toContain("gradereport_user_get_grade_items");
+  });
+});
+
+describe("LMS import resilience", () => {
+  it("imports courses/assignments even when the grades call fails, reporting a warning", async () => {
+    const userId = await makeUser("lms-partial");
+    let gradesAskedFor: string[] | null = null;
+    const provider: LmsProvider = {
+      listCourses: async () => [{ externalId: "101", code: "CS-101", name: "Intro" }],
+      listDeadlines: async () => [],
+      listAssignments: async () => [{ externalId: "ws-assign-1", courseExternalId: "101", title: "HW1", dueAt: new Date("2026-12-01T00:00:00Z"), submissionStatus: "SUBMITTED", submittedAt: new Date("2026-11-20T00:00:00Z") }],
+      listGrades: async (ids: string[]) => {
+        gradesAskedFor = ids;
+        throw new Error("LMS error: invalidrecordunknown");
+      },
+    };
+    const counts = await importLmsData(userId, provider);
+    // Grades are fetched per course id, not courseid:0.
+    expect(gradesAskedFor).toEqual(["101"]);
+    expect(counts.warnings?.some((w) => /Grades.*invalidrecordunknown/.test(w))).toBe(true);
+    expect(await db.course.count({ where: { userId, source: "LMS" } })).toBe(1);
+    expect(await db.assignment.count({ where: { userId, source: "LMS" } })).toBe(1);
+    expect(await db.submission.count({ where: { userId, source: "LMS" } })).toBe(1);
+    expect(await db.assessment.count({ where: { userId, source: "LMS" } })).toBe(0);
+  });
+
+  it("a partial sync leaves the connection CONNECTED (not failed)", async () => {
+    const userId = await makeUser("lms-partial-conn");
+    const conn = await db.integrationConnection.create({ data: { userId, provider: "lms", status: "CONNECTED" } });
+    const r = await runSync(conn, "manual", async () => importLmsData(userId, {
+      listCourses: async () => [{ externalId: "9", name: "C" }],
+      listDeadlines: async () => [],
+      listAssignments: async () => [],
+      listGrades: async () => { throw new Error("boom"); },
+    }));
+    expect(r.status).toBe("PARTIAL");
+    const after = await db.integrationConnection.findUniqueOrThrow({ where: { id: conn.id } });
+    expect(after.status).toBe("CONNECTED");
+    expect(after.lastSuccessAt).not.toBeNull();
   });
 });
 

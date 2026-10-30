@@ -21,7 +21,10 @@ let legacyAgent: https.Agent | undefined;
 
 /** Minimal https request with SSL_OP_LEGACY_SERVER_CONNECT. Only used for allowlisted LMS hosts when opted in. */
 export function legacyTlsRequest(url: URL, init: { method?: string; body?: string; headers?: Record<string, string>; timeoutMs?: number; maxBytes?: number }): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; text: string }> {
-  legacyAgent ??= new https.Agent({ secureOptions: constants.SSL_OP_LEGACY_SERVER_CONNECT, keepAlive: false });
+  // keep-alive reuses one TLS connection across the many sequential web-service
+  // calls, which matters a lot on this slow legacy-TLS host (each new socket is a
+  // full handshake).
+  legacyAgent ??= new https.Agent({ secureOptions: constants.SSL_OP_LEGACY_SERVER_CONNECT, keepAlive: true, maxSockets: 8 });
   const max = init.maxBytes ?? 5 * 1024 * 1024;
   return new Promise((resolve, reject) => {
     const req = https.request(url, { method: init.method ?? "GET", agent: legacyAgent, headers: init.headers, timeout: init.timeoutMs ?? 15_000 }, (res) => {

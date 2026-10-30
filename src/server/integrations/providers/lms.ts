@@ -19,7 +19,7 @@ export interface LmsProvider {
   listCourses(): Promise<LmsCourse[]>;
   listDeadlines(): Promise<LmsDeadline[]>;
   listAssignments?(): Promise<LmsAssignment[]>;
-  listGrades?(): Promise<LmsGradeItem[]>;
+  listGrades?(courseExternalIds: string[]): Promise<LmsGradeItem[]>;
 }
 
 export type LmsCourse = { externalId: string; code?: string; name: string; url?: string };
@@ -44,6 +44,33 @@ export function lmsAllowedHosts(): string[] {
 
 export function lmsBaseUrl(): string {
   return `https://${lmsAllowedHosts()[0]}`;
+}
+
+/** Moodle returns names with HTML entities (e.g. "Calculus &amp; Geometry"); decode the common ones. */
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;|&#x27;/gi, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
+    .trim();
+}
+
+/** Runs `fn` over `items` with at most `limit` in flight, preserving order. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 /**
@@ -174,7 +201,7 @@ export class MoodleWebServiceProvider implements LmsProvider {
 
   async listCourses(): Promise<LmsCourse[]> {
     const courses = await this.call<{ id: number; shortname: string; fullname: string }[]>("core_enrol_get_users_courses", { userid: await this.uid() });
-    return courses.map((c) => ({ externalId: String(c.id), code: c.shortname, name: c.fullname, url: `${this.baseUrl}/course/view.php?id=${c.id}` }));
+    return courses.map((c) => ({ externalId: String(c.id), code: decodeEntities(c.shortname), name: decodeEntities(c.fullname), url: `${this.baseUrl}/course/view.php?id=${c.id}` }));
   }
 
   async listDeadlines(): Promise<LmsDeadline[]> {
@@ -185,7 +212,7 @@ export class MoodleWebServiceProvider implements LmsProvider {
     );
     return r.events.map((e) => ({
       externalId: `ws-event-${e.id}`,
-      title: e.name,
+      title: decodeEntities(e.name),
       courseExternalId: e.course ? String(e.course.id) : undefined,
       startsAt: new Date(e.timestart * 1000),
       endsAt: new Date((e.timestart + (e.timeduration || 0)) * 1000),
@@ -196,63 +223,76 @@ export class MoodleWebServiceProvider implements LmsProvider {
 
   async listAssignments(): Promise<LmsAssignment[]> {
     const r = await this.call<{ courses: { id: number; assignments: { id: number; cmid: number; name: string; duedate: number; grade: number }[] }[] }>("mod_assign_get_assignments");
-    const out: LmsAssignment[] = [];
-    for (const c of r.courses) {
-      for (const a of c.assignments) {
-        let submissionStatus: LmsAssignment["submissionStatus"] = "UNKNOWN";
-        let submittedAt: Date | null = null;
-        let grade: number | null = null;
-        try {
-          const s = await this.call<{ lastattempt?: { submission?: { status: string; timemodified: number } }; feedback?: { grade?: { grade: string } } }>(
-            "mod_assign_get_submission_status",
-            { assignid: a.id },
-          );
-          const st = s.lastattempt?.submission?.status;
-          if (st === "submitted") {
-            submissionStatus = "SUBMITTED";
-            submittedAt = new Date((s.lastattempt!.submission!.timemodified ?? 0) * 1000);
-          } else if (st === "new" || st === "draft") submissionStatus = "NOT_SUBMITTED";
-          const g = s.feedback?.grade?.grade;
-          if (g != null && g !== "" && !Number.isNaN(Number(g))) {
-            grade = Number(g);
-            submissionStatus = "GRADED";
-          }
-        } catch (e) {
-          if (e instanceof ProviderAuthError) throw e;
+    const pairs = r.courses.flatMap((c) => c.assignments.map((a) => ({ c, a })));
+    // The per-assignment submission-status calls dominate sync time on this slow
+    // host, so run them with bounded concurrency instead of one at a time.
+    return mapLimit(pairs, 6, async ({ c, a }) => {
+      let submissionStatus: LmsAssignment["submissionStatus"] = "UNKNOWN";
+      let submittedAt: Date | null = null;
+      let grade: number | null = null;
+      try {
+        const s = await this.call<{ lastattempt?: { submission?: { status: string; timemodified: number } }; feedback?: { grade?: { grade: string } } }>(
+          "mod_assign_get_submission_status",
+          { assignid: a.id },
+        );
+        const st = s.lastattempt?.submission?.status;
+        if (st === "submitted") {
+          submissionStatus = "SUBMITTED";
+          submittedAt = new Date((s.lastattempt!.submission!.timemodified ?? 0) * 1000);
+        } else if (st === "new" || st === "draft") submissionStatus = "NOT_SUBMITTED";
+        const g = s.feedback?.grade?.grade;
+        if (g != null && g !== "" && !Number.isNaN(Number(g))) {
+          grade = Number(g);
+          submissionStatus = "GRADED";
         }
-        out.push({
-          externalId: `ws-assign-${a.id}`,
-          courseExternalId: String(c.id),
-          title: a.name,
-          dueAt: a.duedate ? new Date(a.duedate * 1000) : null,
-          url: `${this.baseUrl}/mod/assign/view.php?id=${a.cmid}`,
-          maxMarks: a.grade > 0 ? a.grade : null,
-          submissionStatus,
-          submittedAt,
-          grade,
-        });
+      } catch (e) {
+        if (e instanceof ProviderAuthError) throw e;
       }
-    }
-    return out;
+      return {
+        externalId: `ws-assign-${a.id}`,
+        courseExternalId: String(c.id),
+        title: decodeEntities(a.name),
+        dueAt: a.duedate ? new Date(a.duedate * 1000) : null,
+        url: `${this.baseUrl}/mod/assign/view.php?id=${a.cmid}`,
+        maxMarks: a.grade > 0 ? a.grade : null,
+        submissionStatus,
+        submittedAt,
+        grade,
+      };
+    });
   }
 
-  async listGrades(): Promise<LmsGradeItem[]> {
-    const r = await this.call<{ usergrades: { courseid: number; gradeitems: { id: number; itemname: string | null; itemtype: string; graderaw: number | null; grademax: number; weightraw?: number | null }[] }[] }>(
-      "gradereport_user_get_grade_items",
-      { courseid: 0, userid: await this.uid() },
-    );
+  async listGrades(courseExternalIds: string[]): Promise<LmsGradeItem[]> {
+    // gradereport_user_get_grade_items requires a real course id — courseid:0 ("all
+    // courses") makes Moodle throw invalidrecordunknown, so query each course and
+    // skip any that refuses (some courses hide the grader report from students).
+    const uid = await this.uid();
+    const ids = courseExternalIds.map(Number).filter(Number.isFinite);
+    const perCourse = await mapLimit(ids, 6, async (courseid) => {
+      try {
+        return await this.call<{ usergrades?: { courseid: number; gradeitems: { id: number; itemname: string | null; itemtype: string; graderaw: number | null; grademax: number; weightraw?: number | null }[] }[] }>(
+          "gradereport_user_get_grade_items",
+          { courseid, userid: uid },
+        );
+      } catch (e) {
+        if (e instanceof ProviderAuthError) throw e;
+        return { usergrades: [] };
+      }
+    });
     const out: LmsGradeItem[] = [];
-    for (const ug of r.usergrades ?? []) {
-      for (const gi of ug.gradeitems) {
-        if (gi.itemtype === "course" || !gi.itemname) continue;
-        out.push({
-          externalId: `ws-grade-${gi.id}`,
-          courseExternalId: String(ug.courseid),
-          title: gi.itemname,
-          obtained: gi.graderaw,
-          max: gi.grademax,
-          weightPct: gi.weightraw != null ? Math.round(gi.weightraw * 10000) / 100 : null,
-        });
+    for (const r of perCourse) {
+      for (const ug of r.usergrades ?? []) {
+        for (const gi of ug.gradeitems) {
+          if (gi.itemtype === "course" || !gi.itemname || !(gi.grademax > 0)) continue;
+          out.push({
+            externalId: `ws-grade-${gi.id}`,
+            courseExternalId: String(ug.courseid),
+            title: decodeEntities(gi.itemname),
+            obtained: gi.graderaw,
+            max: gi.grademax,
+            weightPct: gi.weightraw != null ? Math.round(gi.weightraw * 10000) / 100 : null,
+          });
+        }
       }
     }
     return out;
@@ -265,6 +305,14 @@ export async function importLmsData(userId: string, provider: LmsProvider): Prom
   let updated = 0;
   const now = new Date();
   const courseIds = new Map<string, string>();
+  // Each section is independent: a failure in one (e.g. a Moodle function a
+  // course disables) becomes a warning (PARTIAL sync) instead of discarding the
+  // data that did load. Courses must succeed, since everything maps onto them.
+  const warnings: string[] = [];
+  const note = (what: string, e: unknown) => {
+    if (e instanceof ProviderAuthError) throw e;
+    warnings.push(`${what} could not be synced: ${e instanceof Error ? e.message : "unknown error"}`);
+  };
 
   for (const c of await provider.listCourses()) {
     const existing = await db.course.findUnique({ where: { userId_source_externalId: { userId, source: "LMS", externalId: c.externalId } } });
@@ -279,8 +327,10 @@ export async function importLmsData(userId: string, provider: LmsProvider): Prom
     else created++;
   }
 
+  const assignmentIds = new Set<string>();
+  try {
   const assignments = provider.listAssignments ? await provider.listAssignments() : [];
-  const assignmentIds = new Set(assignments.map((a) => a.externalId));
+  for (const a of assignments) assignmentIds.add(a.externalId);
   for (const a of assignments) {
     const data = {
       title: a.title,
@@ -307,7 +357,11 @@ export async function importLmsData(userId: string, provider: LmsProvider): Prom
       });
     }
   }
+  } catch (e) {
+    note("Assignments", e);
+  }
 
+  try {
   for (const d of await provider.listDeadlines()) {
     const courseId = d.courseExternalId ? (courseIds.get(d.courseExternalId) ?? null) : null;
     if (d.kind === "DEADLINE" && !assignmentIds.has(d.externalId)) {
@@ -345,21 +399,28 @@ export async function importLmsData(userId: string, provider: LmsProvider): Prom
       else created++;
     }
   }
+  } catch (e) {
+    note("Deadlines", e);
+  }
 
   if (provider.listGrades) {
-    for (const g of await provider.listGrades()) {
-      const courseId = courseIds.get(g.courseExternalId);
-      if (!courseId || !(g.max > 0)) continue;
-      const data = { courseId, title: g.title, obtainedMarks: g.obtained, maxMarks: g.max, weightPct: g.weightPct, syncedAt: now };
-      await db.assessment.upsert({
-        where: { userId_source_externalId: { userId, source: "LMS", externalId: g.externalId } },
-        create: { userId, source: "LMS", externalId: g.externalId, ...data },
-        update: data,
-      });
-      updated++;
+    try {
+      for (const g of await provider.listGrades([...courseIds.keys()])) {
+        const courseId = courseIds.get(g.courseExternalId);
+        if (!courseId || !(g.max > 0)) continue;
+        const data = { courseId, title: g.title, obtainedMarks: g.obtained, maxMarks: g.max, weightPct: g.weightPct, syncedAt: now };
+        await db.assessment.upsert({
+          where: { userId_source_externalId: { userId, source: "LMS", externalId: g.externalId } },
+          create: { userId, source: "LMS", externalId: g.externalId, ...data },
+          update: data,
+        });
+        updated++;
+      }
+    } catch (e) {
+      note("Grades", e);
     }
   }
-  return { created, updated };
+  return { created, updated, warnings: warnings.length ? warnings : undefined };
 }
 
 export async function lmsProviderFor(connection: IntegrationConnection): Promise<LmsProvider> {
