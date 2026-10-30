@@ -46,6 +46,46 @@ export function lmsBaseUrl(): string {
   return `https://${lmsAllowedHosts()[0]}`;
 }
 
+/**
+ * Exchanges a Moodle username + password for a web-service token via the
+ * official `login/token.php` endpoint (the same mechanism the Moodle mobile
+ * app uses; `enablemobilewebservice` is on for NUST LMS). The password is used
+ * for this single request and is never stored or logged — only the returned
+ * token is persisted (encrypted) by the caller.
+ */
+export async function exchangeMoodleToken(baseUrl: string, username: string, password: string): Promise<string> {
+  const endpoint = new URL(`${baseUrl}/login/token.php`);
+  const body = new URLSearchParams({ username, password, service: "moodle_mobile_app" }).toString();
+  const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+  let status: number;
+  let text: string;
+  try {
+    if (legacyTlsAllowed()) {
+      const r = await legacyTlsRequest(endpoint, { method: "POST", body, headers });
+      status = r.status;
+      text = r.text;
+    } else {
+      const res = await fetch(endpoint, { method: "POST", body, headers, redirect: "manual", signal: AbortSignal.timeout(20_000) });
+      status = res.status;
+      text = await res.text();
+    }
+  } catch (e) {
+    if (/unsafe legacy renegotiation/i.test(String((e as { cause?: Error })?.cause?.message ?? (e as Error)?.message))) throw new ProviderConfigError(LEGACY_TLS_MESSAGE);
+    throw new ProviderUnavailableError("The LMS did not respond.");
+  }
+  if (status < 200 || status >= 300) throw new ProviderUnavailableError(`The LMS returned HTTP ${status}.`);
+  let json: { token?: string; error?: string; errorcode?: string };
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new ProviderUnavailableError("The LMS returned an unexpected response.");
+  }
+  if (json.token) return json.token;
+  // invalidlogin = wrong credentials; other codes usually mean the mobile service is blocked for this account.
+  if (json.errorcode === "invalidlogin") throw new ProviderAuthError("The LMS rejected that username or password.");
+  throw new ProviderConfigError(json.error ? `LMS: ${json.error}` : "The LMS would not issue a token for this account.");
+}
+
 /** Calendar-feed based provider (deadlines + courses inferred from event categories). */
 export class MoodleCalendarFeedProvider implements LmsProvider {
   private events: ParsedEvent[] | null = null;

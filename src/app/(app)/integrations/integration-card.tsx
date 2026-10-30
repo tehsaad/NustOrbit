@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, CircleDashed, Download, KeyRound, Link2, RefreshCw, ShieldAlert, Unplug, Upload } from "lucide-react";
+import { CheckCircle2, CircleDashed, Download, KeyRound, Link2, LogIn, RefreshCw, ShieldAlert, Unplug, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FormDialog, SelectField, SubmitButton, TextField, useFormAction } from "@/components/forms";
-import { connectLmsFeed, connectLmsToken, disconnectIntegration, importLmsIcsFile, importQalam, startGoogleConnect, syncNow } from "@/server/actions/integrations";
+import { connectLmsFeed, connectLmsLogin, connectLmsToken, disconnectIntegration, importLmsIcsFile, importQalam, startGoogleConnect, syncNow } from "@/server/actions/integrations";
 import type { ProviderDefinition } from "@/server/integrations/registry";
 import { freshness } from "@/domain/freshness";
 import { cn } from "@/lib/utils";
@@ -166,7 +166,26 @@ export function IntegrationCard({
               <FormDialog
                 trigger={
                   <Button size="sm" variant={connected ? "outline" : "default"}>
-                    <Link2 /> {connected ? "Replace link" : "Connect calendar link"}
+                    <LogIn /> {connected ? "Reconnect account" : "Connect NUST account"}
+                  </Button>
+                }
+                title="Sign in to NUST LMS"
+                description="Enter your NUST LMS username and password (the same ones you use on the LMS website). Orbit exchanges them once with the LMS for an access token using Moodle's official mobile login, then discards your password — only the token is kept, encrypted. This brings in your courses, assignments, grades, submission status and deadlines."
+                action={connectLmsLogin}
+                submitLabel="Connect & sync"
+              >
+                {(s) => (
+                  <>
+                    <TextField label="LMS username" name="username" required autoComplete="off" autoCapitalize="none" state={s} />
+                    <TextField label="LMS password" name="password" type="password" required autoComplete="off" state={s} />
+                    <p className="text-xs text-muted-foreground">Your password is sent once to the LMS to get a token and is never stored or logged. Disconnect any time to delete the token. Requires LMS_LEGACY_TLS=1 on the server.</p>
+                  </>
+                )}
+              </FormDialog>
+              <FormDialog
+                trigger={
+                  <Button size="sm" variant="outline">
+                    <Link2 /> Calendar link
                   </Button>
                 }
                 title="Connect NUST LMS calendar"

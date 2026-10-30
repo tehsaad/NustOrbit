@@ -12,6 +12,10 @@ All integrations are managed at **/integrations**. Each card shows capabilities,
 
 ## NUST LMS
 
+**Recommended — sign in with your LMS account.** Integrations → NUST LMS → **Connect NUST account**. Enter your LMS username and password. Orbit exchanges them once with the LMS via Moodle's official mobile login (`login/token.php`) for an access token, then discards the password; only the encrypted token is kept. This brings in courses, assignments, grades, submission status and deadlines. It needs `LMS_LEGACY_TLS=1` set on the server (NUST's TLS is outdated). Disconnect any time to delete the token.
+
+Password-free alternatives (deadlines only, no grades):
+
 1. In the LMS, open **Calendar → Export calendar**.
 2. Choose *All events* and *Recent and next 60 days*, then click **Get calendar URL**.
 3. In Orbit, open **Integrations → NUST LMS → Connect calendar link** and paste the URL. Orbit saves it encrypted and runs a first sync.

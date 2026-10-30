@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { db } from "@/server/db";
-import { importLmsData, MoodleCalendarFeedProvider, syncLms } from "@/server/integrations/providers/lms";
+import { exchangeMoodleToken, importLmsData, MoodleCalendarFeedProvider, syncLms } from "@/server/integrations/providers/lms";
 import { importQalamCsv } from "@/server/integrations/providers/qalam";
 import { runSync } from "@/server/integrations/sync";
 import { ProviderAuthError, ProviderUnavailableError } from "@/server/integrations/errors";
@@ -62,6 +62,35 @@ describe("LMS import", () => {
     const after = await db.integrationConnection.findUniqueOrThrow({ where: { id: conn.id } });
     expect(after.lastSuccessAt).not.toBeNull();
     expect(after.syncLockedUntil).toBeNull();
+  });
+});
+
+describe("Moodle password login (official token exchange)", () => {
+  it("exchanges username+password for a token via login/token.php without leaking the password", async () => {
+    let seenBody = "";
+    vi.stubGlobal("fetch", vi.fn(async (_u: string, init: RequestInit) => {
+      seenBody = String(init.body);
+      return new Response(JSON.stringify({ token: "abc123token" }), { status: 200 });
+    }));
+    const token = await exchangeMoodleToken("https://lms.example.edu", "cms-12345", "s3cret-pass");
+    expect(token).toBe("abc123token");
+    // The request targets the official endpoint with the mobile service.
+    expect(seenBody).toContain("service=moodle_mobile_app");
+  });
+
+  it("maps invalidlogin to an auth error (message never contains the password)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "Invalid login, please try again", errorcode: "invalidlogin" }), { status: 200 })));
+    await expect(exchangeMoodleToken("https://lms.example.edu", "cms-12345", "wrong-pass")).rejects.toMatchObject({ kind: "auth" });
+    try {
+      await exchangeMoodleToken("https://lms.example.edu", "cms-12345", "wrong-pass");
+    } catch (e) {
+      expect((e as Error).message).not.toContain("wrong-pass");
+    }
+  });
+
+  it("reports a disabled mobile service as a config error", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "Web service is not available", errorcode: "enablewsdescription" }), { status: 200 })));
+    await expect(exchangeMoodleToken("https://lms.example.edu", "u", "p")).rejects.toMatchObject({ kind: "config" });
   });
 });
 
