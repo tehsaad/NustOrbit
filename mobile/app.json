@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Orbit Qalam",
-    "slug": "orbit-qalam",
+    "slug": "nust-orbit",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -22,6 +22,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "23fa0228-888e-4afc-868a-0887d3dcb2ca"
+      }
+    },
+    "owner": "tehsaads-team"
   }
 }
