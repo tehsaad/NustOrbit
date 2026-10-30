@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/server/db";
 import { open, seal } from "@/server/crypto/vault";
 
-export type CredentialKind = "oauth_refresh" | "oauth_access" | "ical_url" | "api_token";
+export type CredentialKind = "oauth_refresh" | "oauth_access" | "ical_url" | "api_token" | "ingest_token";
 
 const aad = (connectionId: string, kind: CredentialKind) => `cred:${connectionId}:${kind}`;
 
