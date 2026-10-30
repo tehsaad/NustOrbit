@@ -59,7 +59,7 @@ The GitHub repository is connected to Vercel, so pull requests get preview deplo
 
 | Job | Trigger | Endpoint |
 | --- | --- | --- |
-| Integration sync | Vercel Cron daily 01:00 UTC (`vercel.json`) | `GET /api/cron/sync`, syncing connections idle for >3h, max 20 per run |
+| Integration sync | **GitHub Actions every 6 h** (`.github/workflows/sync.yml`) + Vercel Cron daily 01:00 UTC fallback | `GET /api/cron/sync`, syncing connections idle for >3h, max 20 per run (LMS sync needs `LMS_LEGACY_TLS=1`) |
 | Reminder dispatch | GitHub Actions every 10 min (`.github/workflows/reminders.yml`) + Vercel Cron daily fallback | `GET /api/cron/reminders` |
 
 The GitHub workflow needs two repository secrets:
