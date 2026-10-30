@@ -48,11 +48,11 @@ export const PROVIDERS: ProviderDefinition[] = [
     name: "NUST LMS",
     category: "university",
     description: "Deadlines, quiz openings and course events from lms.nust.edu.pk.",
-    methods: ["secret-url", "file-import", "api-token"],
-    capabilities: ["courses", "deadlines", "assignments", "quizzes", "events.read"],
+    methods: ["api-token", "secret-url", "file-import"],
+    capabilities: ["courses", "deadlines", "assignments", "quizzes", "grades", "submissions", "events.read"],
     availability: "available",
     note:
-      "Uses your personal calendar export link (Calendar → Export calendar → Get calendar URL) or an exported .ics file. Submission status and grades are not part of the calendar feed. A Moodle web-service token is supported only if NUST enables user security keys.",
+      "Sign in with your NUST LMS username and password: Orbit exchanges them once for an access token via Moodle's official mobile login (login/token.php) and stores only the encrypted token. Brings in courses, assignments, grades, submission status and deadlines. Needs LMS_LEGACY_TLS=1 (NUST's server uses outdated TLS). Alternatives that need no password: paste a calendar export link or upload an .ics file (deadlines only).",
     docs: "https://docs.moodle.org/en/Calendar_export",
   },
   {

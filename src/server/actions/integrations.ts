@@ -13,7 +13,7 @@ import { putCredential, deleteCredentials } from "@/server/integrations/credenti
 import { runSync } from "@/server/integrations/sync";
 import { SYNC_HANDLERS } from "@/server/integrations/handlers";
 import { getProvider } from "@/server/integrations/registry";
-import { importLmsData, lmsAllowedHosts, MoodleCalendarFeedProvider } from "@/server/integrations/providers/lms";
+import { exchangeMoodleToken, importLmsData, lmsAllowedHosts, lmsBaseUrl, MoodleCalendarFeedProvider } from "@/server/integrations/providers/lms";
 import { importQalamCsv, type QalamImportKind } from "@/server/integrations/providers/qalam";
 import { beginGoogleAuth, pushEventToGoogle, revokeGoogle } from "@/server/integrations/providers/google";
 import { describeError } from "@/server/integrations/errors";
@@ -75,6 +75,42 @@ export async function connectLmsToken(_: ActionResult, fd: FormData): Promise<Ac
   revalidatePath("/", "layout");
   if (r.status === "FAILED") return { ok: false, error: `Token saved, but the LMS rejected it or failed: ${r.error}` };
   return { ok: true, message: "LMS web-service token verified and synced." };
+}
+
+/**
+ * Connects the LMS with a NUST username + password via Moodle's official
+ * `login/token.php`. The password is used once to obtain a web-service token,
+ * then dropped — only the encrypted token is stored. Never logged.
+ */
+export async function connectLmsLogin(_: ActionResult, fd: FormData): Promise<ActionResult> {
+  const user = await requireUser();
+  const parsed = z
+    .object({ username: z.string().trim().min(1, "Enter your LMS username").max(150), password: z.string().min(1, "Enter your LMS password").max(256) })
+    .safeParse({ username: fd.get("username"), password: fd.get("password") });
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string[]> = {};
+    for (const i of parsed.error.issues) (fieldErrors[String(i.path[0])] ??= []).push(i.message);
+    return { ok: false, error: "Enter your LMS username and password.", fieldErrors };
+  }
+  let token: string;
+  try {
+    token = await exchangeMoodleToken(lmsBaseUrl(), parsed.data.username, parsed.data.password);
+  } catch (e) {
+    // describeError never includes the password; the exchange function doesn't put it in messages.
+    return { ok: false, error: describeError(e) };
+  }
+  const conn = await connectionFor(user.id, "lms");
+  await putCredential(conn.id, "api_token", token);
+  const updated = await db.integrationConnection.update({
+    where: { id: conn.id },
+    // Store the username as a label only (useful for "signed in as"); never the password.
+    data: { status: "CONNECTED", accountLabel: parsed.data.username, grantedScopes: ["moodle_mobile_app"], lastError: null, config: { method: "password_login" } },
+  });
+  await recordAudit({ userId: user.id, action: "integration.connected", targetType: "integration", targetId: "lms", metadata: { method: "password_login" } });
+  const r = await runSync(updated, "connect", SYNC_HANDLERS.lms);
+  revalidatePath("/", "layout");
+  if (r.status === "FAILED") return { ok: false, error: `Signed in, but the first sync failed: ${r.error}` };
+  return { ok: true, message: `LMS connected as ${parsed.data.username}. ${"created" in r ? r.created : 0} items imported.` };
 }
 
 export async function importLmsIcsFile(_: ActionResult, fd: FormData): Promise<ActionResult> {
