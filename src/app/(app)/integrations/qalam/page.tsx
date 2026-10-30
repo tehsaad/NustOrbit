@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { QALAM_TEMPLATES } from "@/server/integrations/providers/qalam";
 import { QALAM_BOOKMARKLET, QALAM_BOOKMARKLET_SOURCE } from "@/lib/qalam-bookmarklet";
 import { QalamExportHelper } from "./export-helper";
+import { ExtensionPairing } from "./extension-pairing";
 
 export const metadata: Metadata = { title: "Export from Qalam" };
 
@@ -29,7 +30,32 @@ export default async function QalamExportPage() {
         </p>
       </div>
 
-      <QalamExportHelper bookmarklet={QALAM_BOOKMARKLET} source={QALAM_BOOKMARKLET_SOURCE} />
+      <section className="mb-8">
+        <h2 className="text-sm font-semibold">Option A — Browser extension (recommended)</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          The Orbit extension reads the Qalam page you have open and sends it straight to your account — no CSV editing. It runs in your own logged-in browser, never sees your
+          password, and only reads a page when you click <span className="text-foreground">Read this page</span>.
+        </p>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+          <li>
+            Load the extension from the <code>extension/</code> folder of your Orbit project (Chrome → <code>chrome://extensions</code> → Developer mode → Load unpacked). Full steps
+            are in <code>extension/README.md</code>.
+          </li>
+          <li>Create a pairing token below and paste it, with your Orbit URL, into the extension.</li>
+          <li>In Qalam, open a page (marks, attendance, timetable, results), click the extension, review the rows, and send.</li>
+        </ol>
+        <ExtensionPairing />
+        <p className="mt-3 text-xs text-muted-foreground">
+          The column aliases are still being calibrated to Qalam&apos;s real layout. If a page reads but the columns look wrong, the mapping is shown for review before anything is
+          sent — tell Orbit what you see (or share redacted page HTML) and the adapter will be tuned.
+        </p>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold">Option B — Bookmarklet + CSV (no install)</h2>
+        <p className="mb-3 mt-1 text-sm text-muted-foreground">Prefer not to install anything? Export a CSV from your Qalam tab and import it.</p>
+        <QalamExportHelper bookmarklet={QALAM_BOOKMARKLET} source={QALAM_BOOKMARKLET_SOURCE} />
+      </section>
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold">Then import it</h2>

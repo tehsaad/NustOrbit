@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orbit — Qalam importer</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #0f172a;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --accent: #4f46e5;
+        --ok: #047857;
+        --warn: #b45309;
+        --err: #b91c1c;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1120;
+          --fg: #e2e8f0;
+          --muted: #94a3b8;
+          --border: #1e293b;
+          --accent: #818cf8;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { font: 13px/1.45 system-ui, sans-serif; color: var(--fg); background: var(--bg); width: 380px; margin: 0; padding: 14px; }
+      h1 { font-size: 14px; margin: 0 0 2px; }
+      .sub { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+      label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+      input, select, button { font: inherit; width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--fg); }
+      button { background: var(--accent); color: #fff; border: 0; cursor: pointer; margin-top: 10px; font-weight: 600; }
+      button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); font-weight: 500; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .row { display: flex; gap: 8px; }
+      .row > * { flex: 1; }
+      .card { border: 1px solid var(--border); border-radius: 9px; padding: 10px; margin-top: 10px; }
+      .muted { color: var(--muted); }
+      .ok { color: var(--ok); }
+      .warn { color: var(--warn); }
+      .err { color: var(--err); }
+      table { border-collapse: collapse; width: 100%; font-size: 11px; margin-top: 6px; }
+      th, td { border: 1px solid var(--border); padding: 3px 5px; text-align: left; white-space: nowrap; overflow: hidden; max-width: 110px; text-overflow: ellipsis; }
+      .scroll { max-height: 180px; overflow: auto; }
+      code { font-size: 11px; word-break: break-all; }
+      .hide { display: none; }
+      a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <h1>Orbit — Qalam importer</h1>
+    <p class="sub">Reads this Qalam page in your browser and sends it to your Orbit account. No password leaves your browser.</p>
+
+    <!-- Pairing -->
+    <div id="pairing" class="card hide">
+      <label for="orbitUrl">Orbit URL</label>
+      <input id="orbitUrl" type="url" placeholder="https://nustorbit.vercel.app" />
+      <label for="token">Pairing token (from Orbit → Integrations → Qalam)</label>
+      <input id="token" type="password" placeholder="connectionId.secret" />
+      <button id="save">Save pairing</button>
+    </div>
+
+    <div id="paired" class="card hide">
+      <div class="muted">Paired with <span id="pairedUrl"></span></div>
+      <button id="changePairing" class="secondary">Change pairing</button>
+    </div>
+
+    <!-- Extract + review -->
+    <div id="work" class="hide">
+      <label for="kind">What is this page?</label>
+      <select id="kind">
+        <option value="auto">Auto-detect</option>
+        <option value="marks">Marks</option>
+        <option value="attendance">Attendance</option>
+        <option value="timetable">Timetable</option>
+        <option value="results">Results</option>
+        <option value="deadlines">Deadlines</option>
+      </select>
+      <button id="read" class="secondary">Read this page</button>
+
+      <div id="review" class="card hide">
+        <div id="reviewHead"></div>
+        <div id="mapping" class="muted" style="margin-top:6px;"></div>
+        <div class="scroll"><div id="preview"></div></div>
+        <button id="send" disabled>Send to Orbit</button>
+      </div>
+    </div>
+
+    <p id="status" class="sub" style="margin-top:10px;"></p>
+    <script src="popup.js"></script>
+  </body>
+</html>

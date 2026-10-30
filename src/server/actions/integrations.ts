@@ -15,6 +15,7 @@ import { SYNC_HANDLERS } from "@/server/integrations/handlers";
 import { getProvider } from "@/server/integrations/registry";
 import { exchangeMoodleToken, importLmsData, lmsAllowedHosts, lmsBaseUrl, MoodleCalendarFeedProvider } from "@/server/integrations/providers/lms";
 import { importQalamCsv, type QalamImportKind } from "@/server/integrations/providers/qalam";
+import { issueQalamToken } from "@/server/integrations/qalam-token";
 import { beginGoogleAuth, pushEventToGoogle, revokeGoogle } from "@/server/integrations/providers/google";
 import { describeError } from "@/server/integrations/errors";
 import { sendPush } from "@/server/notify/channels";
@@ -146,6 +147,24 @@ export async function importQalam(_: ActionResult, fd: FormData): Promise<Action
   revalidatePath("/", "layout");
   if (report.imported === 0) return { ok: false, error: `Nothing imported. ${report.skipped[0] ? `Row ${report.skipped[0].row}: ${report.skipped[0].reason}` : "The file had no data rows."}` };
   return { ok: true, message: `Imported ${report.imported} rows${report.skipped.length ? `, skipped ${report.skipped.length}` : ""}.` };
+}
+
+/**
+ * Mints a one-time pairing token for the Qalam browser extension and marks the
+ * connection paired. The token is returned once for the student to paste into
+ * the extension; only its SHA-256 is stored. Re-running replaces any old token.
+ */
+export async function createQalamToken(): Promise<ActionResult<{ token: string }>> {
+  const user = await requireUser();
+  const conn = await connectionFor(user.id, "qalam");
+  const token = await issueQalamToken(conn.id);
+  await db.integrationConnection.update({
+    where: { id: conn.id },
+    data: { status: "CONNECTED", accountLabel: "Browser extension", grantedScopes: ["qalam-extension"], lastError: null, config: { ...((conn.config as object) ?? {}), method: "extension" } },
+  });
+  await recordAudit({ userId: user.id, action: "integration.extension_paired", targetType: "integration", targetId: "qalam", metadata: { method: "extension" } });
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Pairing token created. Copy it into the extension now — it is shown only once.", data: { token } };
 }
 
 // ── Google ───────────────────────────────────────────────

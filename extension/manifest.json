@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Orbit — Qalam importer",
+  "version": "0.1.0",
+  "description": "Reads your own open Qalam pages in your browser and sends the academic data to your Orbit account. No password, no background crawling.",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://qalam.nust.edu.pk/*", "https://nustorbit.vercel.app/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "Orbit — Qalam importer" },
+  "content_scripts": [
+    {
+      "matches": ["https://qalam.nust.edu.pk/*"],
+      "js": ["extractor.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

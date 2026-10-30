@@ -64,7 +64,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     capabilities: ["grades", "attendance", "timetable", "results"],
     availability: "import-only",
     note:
-      "Qalam has no public student API and blocks automated access. Orbit never asks for your Qalam password. Import CSV files you prepare from your own Qalam pages, or enter data manually.",
+      "Qalam has no public student API and blocks automated sign-in, so Orbit never asks for your Qalam password. Connect the Orbit browser extension (it reads your own open Qalam pages in your logged-in browser), import a CSV you export from Qalam, or enter data manually.",
   },
   {
     id: "google-calendar",
