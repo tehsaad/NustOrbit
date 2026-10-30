@@ -8,6 +8,9 @@ import { emailConfigured, googleConfigured, pushConfigured } from "@/server/env"
 import { PageHeader } from "@/components/page-header";
 import { IntegrationCard } from "./integration-card";
 
+// Interactive LMS sync makes many web-service calls over a slow host.
+export const maxDuration = 120;
+
 export const metadata: Metadata = { title: "Integrations" };
 
 export default async function IntegrationsPage({ searchParams }: { searchParams: Promise<{ connected?: string; error?: string }> }) {

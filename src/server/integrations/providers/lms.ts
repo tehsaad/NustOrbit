@@ -46,6 +46,20 @@ export function lmsBaseUrl(): string {
   return `https://${lmsAllowedHosts()[0]}`;
 }
 
+/** Runs `fn` over `items` with at most `limit` in flight, preserving order. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 /**
  * Exchanges a Moodle username + password for a web-service token via the
  * official `login/token.php` endpoint (the same mechanism the Moodle mobile
@@ -196,44 +210,43 @@ export class MoodleWebServiceProvider implements LmsProvider {
 
   async listAssignments(): Promise<LmsAssignment[]> {
     const r = await this.call<{ courses: { id: number; assignments: { id: number; cmid: number; name: string; duedate: number; grade: number }[] }[] }>("mod_assign_get_assignments");
-    const out: LmsAssignment[] = [];
-    for (const c of r.courses) {
-      for (const a of c.assignments) {
-        let submissionStatus: LmsAssignment["submissionStatus"] = "UNKNOWN";
-        let submittedAt: Date | null = null;
-        let grade: number | null = null;
-        try {
-          const s = await this.call<{ lastattempt?: { submission?: { status: string; timemodified: number } }; feedback?: { grade?: { grade: string } } }>(
-            "mod_assign_get_submission_status",
-            { assignid: a.id },
-          );
-          const st = s.lastattempt?.submission?.status;
-          if (st === "submitted") {
-            submissionStatus = "SUBMITTED";
-            submittedAt = new Date((s.lastattempt!.submission!.timemodified ?? 0) * 1000);
-          } else if (st === "new" || st === "draft") submissionStatus = "NOT_SUBMITTED";
-          const g = s.feedback?.grade?.grade;
-          if (g != null && g !== "" && !Number.isNaN(Number(g))) {
-            grade = Number(g);
-            submissionStatus = "GRADED";
-          }
-        } catch (e) {
-          if (e instanceof ProviderAuthError) throw e;
+    const pairs = r.courses.flatMap((c) => c.assignments.map((a) => ({ c, a })));
+    // The per-assignment submission-status calls dominate sync time on this slow
+    // host, so run them with bounded concurrency instead of one at a time.
+    return mapLimit(pairs, 6, async ({ c, a }) => {
+      let submissionStatus: LmsAssignment["submissionStatus"] = "UNKNOWN";
+      let submittedAt: Date | null = null;
+      let grade: number | null = null;
+      try {
+        const s = await this.call<{ lastattempt?: { submission?: { status: string; timemodified: number } }; feedback?: { grade?: { grade: string } } }>(
+          "mod_assign_get_submission_status",
+          { assignid: a.id },
+        );
+        const st = s.lastattempt?.submission?.status;
+        if (st === "submitted") {
+          submissionStatus = "SUBMITTED";
+          submittedAt = new Date((s.lastattempt!.submission!.timemodified ?? 0) * 1000);
+        } else if (st === "new" || st === "draft") submissionStatus = "NOT_SUBMITTED";
+        const g = s.feedback?.grade?.grade;
+        if (g != null && g !== "" && !Number.isNaN(Number(g))) {
+          grade = Number(g);
+          submissionStatus = "GRADED";
         }
-        out.push({
-          externalId: `ws-assign-${a.id}`,
-          courseExternalId: String(c.id),
-          title: a.name,
-          dueAt: a.duedate ? new Date(a.duedate * 1000) : null,
-          url: `${this.baseUrl}/mod/assign/view.php?id=${a.cmid}`,
-          maxMarks: a.grade > 0 ? a.grade : null,
-          submissionStatus,
-          submittedAt,
-          grade,
-        });
+      } catch (e) {
+        if (e instanceof ProviderAuthError) throw e;
       }
-    }
-    return out;
+      return {
+        externalId: `ws-assign-${a.id}`,
+        courseExternalId: String(c.id),
+        title: a.name,
+        dueAt: a.duedate ? new Date(a.duedate * 1000) : null,
+        url: `${this.baseUrl}/mod/assign/view.php?id=${a.cmid}`,
+        maxMarks: a.grade > 0 ? a.grade : null,
+        submissionStatus,
+        submittedAt,
+        grade,
+      };
+    });
   }
 
   async listGrades(courseExternalIds: string[]): Promise<LmsGradeItem[]> {
@@ -241,17 +254,20 @@ export class MoodleWebServiceProvider implements LmsProvider {
     // courses") makes Moodle throw invalidrecordunknown, so query each course and
     // skip any that refuses (some courses hide the grader report from students).
     const uid = await this.uid();
-    const out: LmsGradeItem[] = [];
-    for (const cid of courseExternalIds) {
-      const courseid = Number(cid);
-      if (!Number.isFinite(courseid)) continue;
-      let r: { usergrades?: { courseid: number; gradeitems: { id: number; itemname: string | null; itemtype: string; graderaw: number | null; grademax: number; weightraw?: number | null }[] }[] };
+    const ids = courseExternalIds.map(Number).filter(Number.isFinite);
+    const perCourse = await mapLimit(ids, 6, async (courseid) => {
       try {
-        r = await this.call("gradereport_user_get_grade_items", { courseid, userid: uid });
+        return await this.call<{ usergrades?: { courseid: number; gradeitems: { id: number; itemname: string | null; itemtype: string; graderaw: number | null; grademax: number; weightraw?: number | null }[] }[] }>(
+          "gradereport_user_get_grade_items",
+          { courseid, userid: uid },
+        );
       } catch (e) {
         if (e instanceof ProviderAuthError) throw e;
-        continue;
+        return { usergrades: [] };
       }
+    });
+    const out: LmsGradeItem[] = [];
+    for (const r of perCourse) {
       for (const ug of r.usergrades ?? []) {
         for (const gi of ug.gradeitems) {
           if (gi.itemtype === "course" || !gi.itemname || !(gi.grademax > 0)) continue;
